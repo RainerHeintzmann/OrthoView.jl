@@ -80,7 +80,7 @@ end
 function get_max_zoom(sz, ax, ax_zy, ax_xz)
     abs_zoom_x = sz[1] / ax.layoutobservables.computedbbox.val.widths[1]
     abs_zoom_y = sz[2] / ax.layoutobservables.computedbbox.val.widths[2]
-    if length(sz) > 2
+    if length(sz) > 2 && !isnothing(ax_zy) && !isnothing(ax_xz)
         abs_zoom_z = sz[3] / ax_zy.layoutobservables.computedbbox.val.widths[1]
         abs_zoom_z2 = sz[3] / ax_xz.layoutobservables.computedbbox.val.widths[2]
         return max(abs_zoom_x,abs_zoom_y, abs_zoom_z, abs_zoom_z2)
@@ -230,6 +230,7 @@ function get_slice(data, pos, dims=(1,2))
     return res
 end
 
+
 function ortho_view(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
     sz = size(myim)
 
@@ -305,16 +306,32 @@ function ortho_view(fig, myim; title = "Image", color=:red, markersize = 40.0, a
         ax_im = Axis(fig[1,1], title=title, yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
         sl_x = Slider(fig[1,1, Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
         sl_y = Slider(fig[1,1, Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
-        position = @lift(get_pos(($(sl_x.value), $(sl_y.value))))
+        sl_o = Tuple(Slider(fig[1:2,d+1], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
+        if ndims(myim) == 2 
+            position = @lift(get_pos(($(sl_x.value), $(sl_y.value))))
+        elseif ndims(myim) == 3
+            position = @lift(get_pos(($(sl_x.value), $(sl_y.value),1)))
+        elseif ndims(myim) == 4
+            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(sl_o[1].value))))
+        elseif ndims(myim) == 5
+            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(sl_o[1].value), $(sl_o[2].value))))
+        elseif ndims(myim) == 6
+            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(sl_o[1].value), $(sl_o[2].value), $(sl_o[3].value))))
+        elseif ndims(myim) == 7
+            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(sl_o[1].value), $(sl_o[2].value), $(sl_o[3].value), $(sl_o[4].value))))
+        elseif ndims(myim) == 8
+            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(sl_o[1].value), $(sl_o[2].value), $(sl_o[3].value), $(sl_o[4].value), $(sl_o[5].value))))
+        end
         hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
-        im = image!(myim, interpolate=false)
+        myim_xy = @lift(get_slice(myim, $position, (1,2)))
+        im = image!(myim_xy, interpolate=false)
         xlims!(0,sz[1])
         ylims!(sz[2],0) # reverse y !
         crosshair(sl_x,sl_y, sz[1:2],color=color)
         ref_ax = [ax_im]
         ax_txt = Axis(fig[2,1], backgroundcolor=:white) # title=title, 
         hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false    
-        register_panel_zoom_link!(ax_im, position, sz[1:2], nothing, nothing, aspects=aspects)
+        register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, aspects=aspects)
     end
 
     register_panel_interactions!(ax_im, sl_x, sl_y, sl_z, ref_ax)
@@ -336,7 +353,11 @@ end
 function ortho_view(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
     sz = size(myim) .* aspects
     fak = preferred_size ./ max(sz...)
-    res = fak .* (sz[1]+sz[3], sz[2]+sz[3])
+    if length(sz) > 2
+        res = fak .* (sz[1]+sz[3], sz[2]+sz[3])
+    else
+        res = fak .* (sz[1], sz[2])
+    end
     fig = Figure(resolution=res)
     ortho_view(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects)
     return fig
