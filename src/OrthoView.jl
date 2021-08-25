@@ -151,8 +151,8 @@ end
 
 function register_panel_interactions!(ax, sl_x, sl_y, sl_z, ref_ax; key_buffer="")
     deregister_interaction!(ax, :rectanglezoom)
-    sz = (to_value(ax.limits)[1][2] , to_value(ax.limits)[2][2])
-    ctr = sz .÷ 2 .+ 1
+    sz = (max(to_value(sl_x.range)[1],to_value(sl_x.range)[end]), max(to_value(sl_y.range)[1],to_value(sl_y.range)[end])) # (to_value(ax.limits)[1][2] , to_value(ax.limits)[2][2])
+    @show ctr = sz .÷ 2 .+ 1
     pos = Node([Point2f0(0)])
 
     register_interaction!(ax, :my_mouse_interaction) do event::MouseEvent, axis
