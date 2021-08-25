@@ -1,13 +1,14 @@
-# cd("C:\\Users\\pi96doc\\Documents\\Programming\\Julia\\DeconvGUI.jl\\")
+# cd("C:\\Users\\pi96doc\\Documents\\Programming\\Julia\\OrthoView.jl\\")
 # ]activate .
 ## interactive example:
 module OrthoView
-export ortho_view
+export ortho_view, test_ortho_view
 
 using GLMakie
 using GLMakie.FileIO
 using Printf
-using Images
+using Images  # for RGB type
+using TestImages
 
 function get_crosshair_xs(px, sx, gap)
     xs = [0f0,px-gap,px+gap,sx,px,px,px,px]
@@ -44,10 +45,10 @@ function fit_into(start, stop, sz, do_limit=false)
     if stop>sz+1
         start -= stop-(sz+1); stop=sz+1;
     end
-    if abs(stop-start)>sz
-        delta = sign(stop-start)*abs(stop-start) - sz
-        start += delta/2
-        stop += delta/2
+    if abs(stop-start)+ 1 >sz
+        delta = sign(stop-start)*(abs(stop-start) - (sz))
+        start += delta/2 
+        stop += delta/2 
     end
     if do_limit
         return clamp(start,-0.5,sz), clamp(stop,-0.5,sz)
@@ -56,22 +57,23 @@ function fit_into(start, stop, sz, do_limit=false)
     end
 end
 
-function do_zoom(ax_xy, ctr, sz, abs_zoom, data_aspect=(1,1,1), indices=(1,2), x_lead= nothing)
-    sz2d = (sz[indices[1]],sz[indices[2]])
-    @show lx,ly = to_value(ax_xy.limits)
-    sx,sy = ax_xy.layoutobservables.computedbbox.val.widths  # The size in pixels that is available
-    if isnothing(x_lead)
-        x_lead = (sz2d[2] / sy < sz2d[1] / sx)
+function do_zoom(ax_xy, ctr, sz, abs_zoom, aspects=(1,1,1), indices=(1,2))
+    if isnothing(ax_xy)
+        return
     end
+    ix,iy = abs.(indices)
+    sz2d = (sz[ix],sz[iy])
+    lx,ly = to_value(ax_xy.limits)
+    sx,sy = ax_xy.layoutobservables.computedbbox.val.widths  # The size in pixels that is available
     if isnothing(lx)
         return Consume(true)
     end
-    c = to_value(ctr) .- 0.5
-    @show c = (c[indices[1]], c[indices[2]])
-    half_width = abs_zoom .* sx / 2 * data_aspect[1]
+    c = (to_value(ctr) .- 0.5) # .* aspects
+    c = (c[ix], c[iy])
+    half_width = sign(indices[1])*abs_zoom .* sx / aspects[ix] / 2  
     nx_start, nx_stop = fit_into(c[1] - half_width, c[1] + half_width, sz2d[1], false)
     xlims!(ax_xy,nx_start,nx_stop)
-    half_width = abs_zoom .* sy / 2  * data_aspect[2]
+    half_width = sign(indices[2])*abs_zoom .* sy / aspects[iy] / 2  
     ny_start, ny_stop = fit_into(c[2] - half_width, c[2] + half_width, sz2d[2], false)
     ylims!(ax_xy,ny_start,ny_stop)
 end
@@ -79,66 +81,72 @@ end
 function get_max_zoom(sz, ax, ax_zy, ax_xz)
     abs_zoom_x = sz[1] / ax.layoutobservables.computedbbox.val.widths[1]
     abs_zoom_y = sz[2] / ax.layoutobservables.computedbbox.val.widths[2]
-    abs_zoom_z = sz[3] / ax_zy.layoutobservables.computedbbox.val.widths[1]
-    abs_zoom_z2 = sz[3] / ax_xz.layoutobservables.computedbbox.val.widths[2]
-    return max(abs_zoom_x,abs_zoom_y, abs_zoom_z, abs_zoom_z2)
+    if length(sz) > 2
+        abs_zoom_z = sz[3] / ax_zy.layoutobservables.computedbbox.val.widths[1]
+        abs_zoom_z2 = sz[3] / ax_xz.layoutobservables.computedbbox.val.widths[2]
+        return max(abs_zoom_x,abs_zoom_y, abs_zoom_z, abs_zoom_z2)
+    else
+        return max(abs_zoom_x,abs_zoom_y)
+    end
 end
 
-function zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, data_aspect, ctr, sz)
+function zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, aspects, ctr, sz)
     if !isnothing(event)
         zoom_dir = to_value(event.y)
-        zoom_max = get_max_zoom(sz, ax, ax_zy, ax_xz)
+        zoom_max = get_max_zoom(sz .* aspects, ax, ax_zy, ax_xz)
         abs_zoom = min(abs_zoom * 1.1 ^ -zoom_dir, zoom_max)
     end
-
-    do_zoom(ax, ctr, sz, abs_zoom, data_aspect, (1,2))
-    do_zoom(ax_xz, ctr, sz, abs_zoom, data_aspect, (1,3), true)
-    do_zoom(ax_zy, ctr, sz, abs_zoom, data_aspect, (3,2), false)
+    do_zoom(ax, ctr, sz, abs_zoom, aspects, (1,-2))
+    do_zoom(ax_xz, ctr, sz, abs_zoom, aspects, (1,-3))
+    do_zoom(ax_zy, ctr, sz, abs_zoom, aspects, (3,-2))
     return abs_zoom
 end
 
-function register_panel_zoom_link!(ax, ctr, sz, ax_xz=nothing, ax_zy=nothing, data_aspect=(1,1,1))
+function register_panel_zoom_link!(ax, ctr, sz, ax_xz=nothing, ax_zy=nothing; aspects=ones(length(sz)))
 
-    abs_zoom = get_max_zoom(sz, ax, ax_zy, ax_xz)
-    zoom_all(abs_zoom, nothing, ax, ax_xz, ax_zy, data_aspect,ctr, sz)
+    abs_zoom = get_max_zoom(sz.*aspects, ax, ax_zy, ax_xz)
+    zoom_all(abs_zoom, nothing, ax, ax_xz, ax_zy, aspects, ctr, sz)
     register_interaction!(ax, :my_scroll_interaction) do event::ScrollEvent, axis
-        abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, data_aspect,ctr, sz)
+        abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, aspects, ctr, sz)
         return Consume(true) # for now prevent the zoom
     end
     if !isnothing(ax_xz)
         register_interaction!(ax_xz, :my_scroll_interaction) do event::ScrollEvent, axis
-            abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, data_aspect,ctr, sz)
+            abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, aspects, ctr, sz)
             return Consume(true) # for now prevent the zoom
         end
     end
     if !isnothing(ax_zy)
         register_interaction!(ax_zy, :my_scroll_interaction) do event::ScrollEvent, axis
-            abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, data_aspect,ctr, sz)
+            abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, aspects, ctr, sz)
             return Consume(true) # for now prevent the zoom
         end
     end
 end
 
-function get_text(name, pos, data)
+function get_text(name, pos, data, aspects)
     d = data[pos...];
     sz = size(data)
     rel_pos = pos .- (sz .÷2 .+1)
+    str = "$(name),\n"
     if isa(d, Complex)
-        "$(name),\n$(@sprintf("%.3f + %.3fi",real(d),imag(d)))\npos: $(pos)\n from ctr: $(rel_pos)\nsize:$(size(data))"
+        str *= "$(@sprintf("%.3f + %.3fi",real(d),imag(d)))\n"
     else
         if isa(d, Real)
-            "$(name),$(@sprintf("%.3f",d)),\npos: $(pos)\nfrom ctr:  $(rel_pos)\nsize:$(size(data))"
+            str *= "$(@sprintf("%.3f",d)),\n"
         else
             if isa(d, Tuple)
                 d = round.(data[pos...]; digits=3)
-                "$(name), $(d),\npos: $(pos)\nfrom ctr:  $(rel_pos)\nsize:$(size(data))"
+                str *= "$(d),\n"
             elseif isa(d,RGB)
-                "$(name), RGB: $(@sprintf("%.2f",d.r)), $(@sprintf("%.2f",d.g)), $(@sprintf("%.2f",d.b)),\npos: $(pos)\nfrom ctr:  $(rel_pos)\nsize:$(size(data))"
+                str *= "RGB: $(@sprintf("%.2f",d.r)), $(@sprintf("%.2f",d.g)), $(@sprintf("%.2f",d.b)),\n"
             else
-                "$(name), $(d),\npos: $(pos)\nfrom ctr:  $(rel_pos)\nsize:$(size(data))"
+                str *= "$(d),\n"
             end
         end
     end
+    str *= "pos: $(pos)\nctr: $(rel_pos)\nscaled ctr: $(rel_pos .* aspects)\nsize:$(size(data))"
+
 end
 
 function register_panel_interactions!(ax, sl_x, sl_y, sl_z, ref_ax; key_buffer="")
@@ -223,20 +231,19 @@ function get_slice(data, pos, dims=(1,2))
     return res
 end
 
-function ortho_view(fig, myim; title = "cow", start_pos=(1,1), color=:red, markersize = 40.0)
+function ortho_view(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
     sz = size(myim)
 
-    grid_size = 2
     sl_z = nothing
-    if ndims(myim) > 2
+    if ndims(myim) > 2 && sz[3] > 1
         grid_size = 3
-        sl_x = Slider(fig[start_pos[1]+2,start_pos[2]], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2)
-        sl_y = Slider(fig[start_pos[1],start_pos[2]+2], range = 1:sz[2], horizontal = false, startvalue = sz[2]/2)
-        sl_z = Slider(fig[start_pos[1]+2,start_pos[2]+1], range = 1:sz[3], horizontal = true, startvalue = sz[3]/2)
+        sl_x = Slider(fig[1,1,Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
+        sl_y = Slider(fig[1,1,Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
+        sl_z = Slider(fig[1,2,Bottom()], range = 1:sz[3], horizontal = true, startvalue = sz[3]/2+1)
         if ndims(myim) > 8
             error("Maximal number of dimensions exceeded.")
         end
-        sl_o = Tuple(Slider(fig[start_pos[1]:start_pos[1]+1,start_pos[2]+2+d], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
+        sl_o = Tuple(Slider(fig[1:2,2+d], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
         if ndims(myim) == 3
             position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value))))
         elseif ndims(myim) == 4
@@ -250,7 +257,7 @@ function ortho_view(fig, myim; title = "cow", start_pos=(1,1), color=:red, marke
         elseif ndims(myim) == 8
             position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(sl_o[1].value), $(sl_o[2].value), $(sl_o[3].value), $(sl_o[4].value), $(sl_o[5].value))))
         end
-        ax_im_xz = Axis(fig[start_pos[1]+1,start_pos[2]], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
+        ax_im_xz = Axis(fig[2,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
         hidedecorations!(ax_im_xz, grid = false); ax_im_xz.xrectzoom = false; ax_im_xz.yrectzoom = false
         # myim_xz = @lift(myim[:,round(Int,$(sl_y.value)),:])
         myim_xz = @lift(get_slice(myim, $position, (1,3)))
@@ -259,7 +266,7 @@ function ortho_view(fig, myim; title = "cow", start_pos=(1,1), color=:red, marke
         ylims!(sz[3],0) # no reverse
         crosshair(sl_x,sl_z, (sz[1],sz[3]), color=color)
 
-        ax_im_zy = Axis(fig[start_pos[1],start_pos[2]+1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
+        ax_im_zy = Axis(fig[1,2], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
         hidedecorations!(ax_im_zy, grid = false); ax_im_zy.xrectzoom = false; ax_im_zy.yrectzoom = false
         myim_zy = @lift(get_slice(myim, $position, (3,2)))
         # myim_zy = @lift(myim[round(Int,$(sl_x.value)),:,:])
@@ -269,7 +276,7 @@ function ortho_view(fig, myim; title = "cow", start_pos=(1,1), color=:red, marke
         crosshair(sl_z,sl_y, (sz[3],sz[2]), color=color)
 
         #  aspect = DataAspect(), 
-        ax_im = Axis(fig[start_pos...], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
+        ax_im = Axis(fig[1,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
         hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
         myim_xy = @lift(get_slice(myim, $position, (1,2)))
         im = image!(myim_xy, interpolate=false)
@@ -285,32 +292,36 @@ function ortho_view(fig, myim; title = "cow", start_pos=(1,1), color=:red, marke
 
         ref_ax = [ax_im]
 
+        ax_txt = Axis(fig[2,2], backgroundcolor=:white) # title=title, 
+        hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
+
+        rowsize!(fig.layout, 2, Auto(aspects[3]*sz[3]/(aspects[2]*sz[2])))
+        colsize!(fig.layout, 2, Auto(aspects[3]*sz[3]/(aspects[1]*sz[1])))
+
         register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
         register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
-        register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy)
+        register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, aspects=aspects)
 
-        ax_txt = Axis(fig[start_pos[1]+1,start_pos[2]+1], backgroundcolor=:white) # title=title, 
-        hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false    
     else
-        sl_x = Slider(fig[start_pos[1]+1,start_pos[2]], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2)
-        sl_y = Slider(fig[start_pos[1],start_pos[2]+1], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2)
+        ax_im = Axis(fig[1,1], title=title, yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
+        sl_x = Slider(fig[1,1, Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
+        sl_y = Slider(fig[1,1, Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
         position = @lift(get_pos(($(sl_x.value), $(sl_y.value))))
-        ax_im = Axis(fig[start_pos...], aspect = DataAspect(), title=title, yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
         hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
         im = image!(myim, interpolate=false)
         xlims!(0,sz[1])
         ylims!(sz[2],0) # reverse y !
         crosshair(sl_x,sl_y, sz[1:2],color=color)
         ref_ax = [ax_im]
-        ax_txt = Axis(fig[start_pos[1]+2,start_pos[2]], backgroundcolor=:white) # title=title, 
+        ax_txt = Axis(fig[2,1], backgroundcolor=:white) # title=title, 
         hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false    
-        register_panel_zoom_link!(ax_im, position, sz[1:2])
+        register_panel_zoom_link!(ax_im, position, sz[1:2], nothing, nothing, aspects=aspects)
     end
 
     register_panel_interactions!(ax_im, sl_x, sl_y, sl_z, ref_ax)
 
     xlims!(ax_txt,-4,100); ylims!(ax_txt,-4,100)
-    txt = @lift(get_text(title, to_value($(position)), myim))
+    txt = @lift(get_text(title, to_value($(position)), myim, aspects))
     text!(ax_txt, txt, position = Point(0,99), color = :black, align = (:left, :top), justification = :left)
 
     #menu = Menu(fig, options = ["viridis", "heat", "plasma", "magma", "inferno"])
@@ -318,9 +329,24 @@ function ortho_view(fig, myim; title = "cow", start_pos=(1,1), color=:red, marke
     #    im.colormap = s
     #end
 
-    hm_sublayout = GridLayout()
-    fig[start_pos[1]:start_pos[1]+grid_size-1,start_pos[2]:start_pos[2]+grid_size-1] = hm_sublayout
+    # hm_sublayout = GridLayout()
+    # fig[1:1+grid_size-1,1:1+grid_size-1] = hm_sublayout
     return fig # , grid_size
+end
+
+function ortho_view(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
+    sz = size(myim) .* aspects
+    @show fak = preferred_size ./ max(sz...)
+    @show res=fak .* (sz[1]+sz[3], sz[2]+sz[3])
+    fig = Figure(resolution=res)
+    ortho_view(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects)
+    return fig
+end
+
+function test_ortho_view(;aspects=(1,1,1))
+    set_theme!(theme_black())
+    obj = testimage("simple_3d_ball.tif")
+    ortho_view(obj, aspects=aspects)
 end
 
 end
