@@ -220,9 +220,9 @@ end
 function get_slice(data, pos, dims=(1,2)) 
     idx = Tuple((d in dims) ? Colon() : pos[d] for d = 1:length(pos))
     if dims[1] > dims[2]
-        res = transpose(data[idx...])
+        res = transpose(@view data[idx...])
     else
-        res = data[idx...]
+        res = @view data[idx...]
     end
     if isa(res[1],Complex)
         res = abs2.(res)
