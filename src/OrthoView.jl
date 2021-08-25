@@ -336,8 +336,8 @@ end
 
 function ortho_view(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
     sz = size(myim) .* aspects
-    @show fak = preferred_size ./ max(sz...)
-    @show res=fak .* (sz[1]+sz[3], sz[2]+sz[3])
+    fak = preferred_size ./ max(sz...)
+    res = fak .* (sz[1]+sz[3], sz[2]+sz[3])
     fig = Figure(resolution=res)
     ortho_view(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects)
     return fig
