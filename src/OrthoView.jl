@@ -7,8 +7,7 @@ export ortho_view, test_ortho_view
 using GLMakie
 using GLMakie.FileIO
 using Printf
-using Images  # for RGB type
-using TestImages
+using ColorTypes  # for RGB type
 
 function get_crosshair_xs(px, sx, gap)
     xs = [0f0,px-gap,px+gap,sx,px,px,px,px]
@@ -152,7 +151,7 @@ end
 function register_panel_interactions!(ax, sl_x, sl_y, sl_z, ref_ax; key_buffer="")
     deregister_interaction!(ax, :rectanglezoom)
     sz = (max(to_value(sl_x.range)[1],to_value(sl_x.range)[end]), max(to_value(sl_y.range)[1],to_value(sl_y.range)[end])) # (to_value(ax.limits)[1][2] , to_value(ax.limits)[2][2])
-    @show ctr = sz .÷ 2 .+ 1
+    ctr = sz .÷ 2 .+ 1
     pos = Node([Point2f0(0)])
 
     register_interaction!(ax, :my_mouse_interaction) do event::MouseEvent, axis
@@ -343,9 +342,9 @@ function ortho_view(myim; preferred_size = 600, title = "Image", color=:red, mar
     return fig
 end
 
-function test_ortho_view(;aspects=(1,1,1))
+function test_ortho_view(;aspects=(1,1,1,1))
     set_theme!(theme_black())
-    obj = testimage("simple_3d_ball.tif")
+    obj = rand(10,20,30,40) # testimage("simple_3d_ball.tif")
     ortho_view(obj, aspects=aspects)
 end
 
