@@ -8,6 +8,7 @@ using GLMakie
 using GLMakie.FileIO
 using Printf
 using ColorTypes  # for RGB type
+using ColorSchemes
 
 function get_crosshair_xs(px, sx, gap)
     xs = [0f0,px-gap,px+gap,sx,px,px,px,px]
@@ -259,6 +260,9 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         figlayout = fig.layout
     end
 
+    show_cbar = true
+
+    ax_im = ax_xz = ax_zy = nothing
     sl_z = nothing
     prev_position =  Node([Point3f0(0)])
     if ndims(myim) > 2 && sz[3] > 1
@@ -269,7 +273,8 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         if ndims(myim) > 8
             error("Maximal number of dimensions exceeded.")
         end
-        sl_o = Tuple(Slider(fig[1:2,2+d], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
+
+        sl_o = Tuple(Slider(fig[1:2,2+show_cbar+d], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
         pos_o = obs_from_sliders(sl_o)
         ax_im_xz = Axis(fig[2,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
         hidedecorations!(ax_im_xz, grid = false); ax_im_xz.xrectzoom = false; ax_im_xz.yrectzoom = false
@@ -313,7 +318,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         ref_ax = [ax_im]
 
-        ax_txt = Axis(fig[2,2], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
+        ax_txt = Axis(fig[2,2:2+show_cbar], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
         hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
 
         r_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
@@ -321,23 +326,26 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         rowsize!(figlayout, 2, r_ratio)
         colsize!(figlayout, 2, c_ratio)
         @show ax_txt.layoutobservables.computedbbox.val.widths
-        if ax_txt.layoutobservables.computedbbox.val.widths[1] < 130
-            rowsize!(figlayout, 2, 130)
+        if ax_txt.layoutobservables.computedbbox.val.widths[1] < 300
+            colsize!(figlayout, 2, 180)
         end
-        if ax_txt.layoutobservables.computedbbox.val.widths[2] < 260
-            colsize!(figlayout, 2, 260)
+        if ax_txt.layoutobservables.computedbbox.val.widths[2] < 130
+            rowsize!(figlayout, 2, 130)
         end
         @show ax_txt.layoutobservables.computedbbox.val.widths
 
         register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
         register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
         register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, aspects=aspects)
-
+        if show_cbar
+            cbar = Colorbar(fig[1,3], im, label = "Brightness", alignmode = Outside())
+            cbar.width = 20
+        end
     else
         ax_im = Axis(fig[1,1], title=title, yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
         sl_x = Slider(fig[1,1, Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
         sl_y = Slider(fig[1,1, Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
-        sl_o = Tuple(Slider(fig[1:2,d+1], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
+        sl_o = Tuple(Slider(fig[1:2,1+d+show_cbar], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
         pos_o = obs_from_sliders(sl_o)
         hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
         if isnothing(pos_o)
@@ -356,10 +364,15 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         ylims!(sz[2],0) # reverse y !
         crosshair(sl_x,sl_y, sz[1:2],color=color)
         ref_ax = [ax_im]
-        ax_txt = Axis(fig[2,1], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
+        ax_txt = Axis(fig[2,1:1+show_cbar], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
         rowsize!(figlayout, 2, 180)
-        hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false    
+        hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
         register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, aspects=aspects)
+
+        if show_cbar
+            cbar = Colorbar(fig[1,2], im, label = "Brightness", alignmode = Outside())
+            cbar.width = 20
+        end
     end
 
     register_panel_interactions!(ax_im, sl_x, sl_y, sl_z, ref_ax)
@@ -375,6 +388,10 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
     # hm_sublayout = GridLayout()
     # fig[1:1+grid_size-1,1:1+grid_size-1] = hm_sublayout
+
+    abs_zoom = get_max_zoom(sz.*aspects, ax_im, ax_zy, ax_xz)
+    zoom_all(abs_zoom, nothing, ax_im, ax_xz, ax_zy, aspects, sz .÷ 2 .+1, sz)
+
     return fig # , grid_size
 end
 
@@ -384,7 +401,7 @@ function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markers
     if length(sz) > 2 && sz[3] != 1
         res = fak .* (sz[1]+sz[3], sz[2]+sz[3])
     else
-        res = fak .* (sz[1], sz[2])  .+ (0,220) # additional space for text
+        res = fak .* (sz[1] + 30, sz[2])  .+ (0,220) # additional space for cbar and text
     end
     fig = Figure(resolution=res)
     ortho!(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects)
