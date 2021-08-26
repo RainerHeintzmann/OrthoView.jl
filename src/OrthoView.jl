@@ -230,6 +230,25 @@ function get_slice(data, pos, dims=(1,2))
     return res
 end
 
+function obs_from_sliders(sls)
+    sz = length(sls)
+    if sz == 0
+        return nothing
+    elseif sz == 1
+        position = @lift(get_pos(($(sls[1].value))))
+    elseif sz == 2
+        position = @lift(get_pos(($(sls[1].value), $(sls[2].value))))
+    elseif sz == 3
+        position = @lift(get_pos(($(sls[1].value), $(sls[2].value), $(sls[3].value))))
+    elseif sz == 4
+        position = @lift(get_pos(($(sls[1].value), $(sls[2].value), $(sls[3].value), $(sls[4].value))))
+    elseif sz == 5
+        position = @lift(get_pos(($(sls[1].value), $(sls[2].value), $(sls[3].value), $(sls[4].value), $(sls[5].value))))
+    else
+        error("a maximum of 5 extra dimensions is allowed")
+    end
+    position
+end
 
 function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
     sz = size(myim)
@@ -243,7 +262,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     sl_z = nothing
     prev_position =  Node([Point3f0(0)])
     if ndims(myim) > 2 && sz[3] > 1
-        grid_size = 3
+        # grid_size = 3
         sl_x = Slider(fig[1,1,Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
         sl_y = Slider(fig[1,1,Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
         sl_z = Slider(fig[1,2,Bottom()], range = 1:sz[3], horizontal = true, startvalue = sz[3]/2+1)
@@ -251,23 +270,11 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
             error("Maximal number of dimensions exceeded.")
         end
         sl_o = Tuple(Slider(fig[1:2,2+d], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
-        if ndims(myim) == 3
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value))))
-        elseif ndims(myim) == 4
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(sl_o[1].value))))
-        elseif ndims(myim) == 5
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(sl_o[1].value), $(sl_o[2].value))))
-        elseif ndims(myim) == 6
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(sl_o[1].value), $(sl_o[2].value), $(sl_o[3].value))))
-        elseif ndims(myim) == 7
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(sl_o[1].value), $(sl_o[2].value), $(sl_o[3].value), $(sl_o[4].value))))
-        elseif ndims(myim) == 8
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(sl_o[1].value), $(sl_o[2].value), $(sl_o[3].value), $(sl_o[4].value), $(sl_o[5].value))))
-        end
+        pos_o = obs_from_sliders(sl_o)
         ax_im_xz = Axis(fig[2,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
         hidedecorations!(ax_im_xz, grid = false); ax_im_xz.xrectzoom = false; ax_im_xz.yrectzoom = false
         # myim_xz = @lift(myim[:,round(Int,$(sl_y.value)),:])
-        myim_xz = @lift(get_slice(myim, $position, (1,3), prev_position))
+        myim_xz = @lift(get_slice(myim, (sl_x.value, $(sl_y.value), sl_z.value, $(pos_o)...), (1,3)))
         im_xz = image!(myim_xz, interpolate=false)
         xlims!(0,sz[1])
         ylims!(sz[3],0) # no reverse
@@ -275,8 +282,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         ax_im_zy = Axis(fig[1,2], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
         hidedecorations!(ax_im_zy, grid = false); ax_im_zy.xrectzoom = false; ax_im_zy.yrectzoom = false
-        myim_zy = @lift(get_slice(myim, $position, (3,2)))
-        # myim_zy = @lift(myim[round(Int,$(sl_x.value)),:,:])
+        myim_zy = @lift(get_slice(myim, ( $(sl_x.value), sl_y.value, sl_z.value, $(pos_o)...), (3,2)))
         im_zy = image!(myim_zy, interpolate=false)
         xlims!(0,sz[3])
         ylims!(sz[1],0) # no reverse
@@ -285,7 +291,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         #  aspect = DataAspect(), 
         ax_im = Axis(fig[1,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
         hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
-        myim_xy = @lift(get_slice(myim, $position, (1,2)))
+        myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, $(sl_z.value), $(pos_o)...), (1,2)))
         im = image!(myim_xy, interpolate=false)
         #xlims!(4,5)
         #ylims!(4,5)
@@ -307,6 +313,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
         register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
+        position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(pos_o)...)))
         register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, aspects=aspects)
 
     else
@@ -314,29 +321,26 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         sl_x = Slider(fig[1,1, Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
         sl_y = Slider(fig[1,1, Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
         sl_o = Tuple(Slider(fig[1:2,d+1], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
-        if ndims(myim) == 2 
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value))))
-        elseif ndims(myim) == 3
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value),1)))
-        elseif ndims(myim) == 4
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(sl_o[1].value))))
-        elseif ndims(myim) == 5
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(sl_o[1].value), $(sl_o[2].value))))
-        elseif ndims(myim) == 6
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(sl_o[1].value), $(sl_o[2].value), $(sl_o[3].value))))
-        elseif ndims(myim) == 7
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(sl_o[1].value), $(sl_o[2].value), $(sl_o[3].value), $(sl_o[4].value))))
-        elseif ndims(myim) == 8
-            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(sl_o[1].value), $(sl_o[2].value), $(sl_o[3].value), $(sl_o[4].value), $(sl_o[5].value))))
-        end
+        pos_o = obs_from_sliders(sl_o)
         hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
-        myim_xy = @lift(get_slice(myim, $position, (1,2)))
+        if isnothing(pos_o)
+            myim_xy = get_slice(myim, (sl_x.value, sl_y.value, 1), (1,2))
+            if ndims(myim) == 3
+                position = @lift(get_pos(($(sl_x.value), $(sl_y.value),1)))
+            else
+                position = @lift(get_pos(($(sl_x.value), $(sl_y.value))))
+            end
+        else
+            myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, 1, $(pos_o)...), (1,2)))
+            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(pos_o)...)))
+        end
         im = image!(myim_xy, interpolate=false)
         xlims!(0,sz[1])
         ylims!(sz[2],0) # reverse y !
         crosshair(sl_x,sl_y, sz[1:2],color=color)
         ref_ax = [ax_im]
         ax_txt = Axis(fig[2,1], backgroundcolor=:white) # title=title, 
+        rowsize!(figlayout, 2, 180)
         hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false    
         register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, aspects=aspects)
     end
@@ -360,10 +364,10 @@ end
 function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
     sz = size(myim) .* aspects
     fak = preferred_size ./ max(sz...)
-    if length(sz) > 2
+    if length(sz) > 2 && sz[3] != 1
         res = fak .* (sz[1]+sz[3], sz[2]+sz[3])
     else
-        res = fak .* (sz[1], sz[2])
+        res = fak .* (sz[1], sz[2])  .+ (0,220) # additional space for text
     end
     fig = Figure(resolution=res)
     ortho!(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects)
