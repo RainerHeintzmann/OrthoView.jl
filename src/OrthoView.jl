@@ -127,7 +127,7 @@ function get_text(name, pos, data, aspects)
     d = data[pos...];
     sz = size(data)
     rel_pos = pos .- (sz .÷2 .+1)
-    str = "$(name),\n"
+    str = "$(name): "
     if isa(d, Complex)
         str *= "$(@sprintf("%.3f + %.3fi",real(d),imag(d)))\n"
     else
@@ -274,7 +274,17 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         ax_im_xz = Axis(fig[2,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
         hidedecorations!(ax_im_xz, grid = false); ax_im_xz.xrectzoom = false; ax_im_xz.yrectzoom = false
         # myim_xz = @lift(myim[:,round(Int,$(sl_y.value)),:])
-        myim_xz = @lift(get_slice(myim, (sl_x.value, $(sl_y.value), sl_z.value, $(pos_o)...), (1,3)))
+        if isnothing(pos_o)
+            myim_xz = @lift(get_slice(myim, (sl_x.value, $(sl_y.value), sl_z.value), (1,3)))
+            myim_zy = @lift(get_slice(myim, ( $(sl_x.value), sl_y.value, sl_z.value), (3,2)))
+            myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, $(sl_z.value)), (1,2)))
+            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value))))
+        else
+            myim_xz = @lift(get_slice(myim, (sl_x.value, $(sl_y.value), sl_z.value, $(pos_o)...), (1,3)))
+            myim_zy = @lift(get_slice(myim, ( $(sl_x.value), sl_y.value, sl_z.value, $(pos_o)...), (3,2)))
+            myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, $(sl_z.value), $(pos_o)...), (1,2)))
+            position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(pos_o)...)))
+        end
         im_xz = image!(myim_xz, interpolate=false)
         xlims!(0,sz[1])
         ylims!(sz[3],0) # no reverse
@@ -282,7 +292,6 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         ax_im_zy = Axis(fig[1,2], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
         hidedecorations!(ax_im_zy, grid = false); ax_im_zy.xrectzoom = false; ax_im_zy.yrectzoom = false
-        myim_zy = @lift(get_slice(myim, ( $(sl_x.value), sl_y.value, sl_z.value, $(pos_o)...), (3,2)))
         im_zy = image!(myim_zy, interpolate=false)
         xlims!(0,sz[3])
         ylims!(sz[1],0) # no reverse
@@ -291,7 +300,6 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         #  aspect = DataAspect(), 
         ax_im = Axis(fig[1,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
         hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
-        myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, $(sl_z.value), $(pos_o)...), (1,2)))
         im = image!(myim_xy, interpolate=false)
         #xlims!(4,5)
         #ylims!(4,5)
@@ -305,15 +313,24 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         ref_ax = [ax_im]
 
-        ax_txt = Axis(fig[2,2], backgroundcolor=:white) # title=title, 
+        ax_txt = Axis(fig[2,2], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
         hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
 
-        rowsize!(figlayout, 2, Auto(aspects[3]*sz[3]/(aspects[2]*sz[2])))
-        colsize!(figlayout, 2, Auto(aspects[3]*sz[3]/(aspects[1]*sz[1])))
+        r_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
+        c_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
+        rowsize!(figlayout, 2, r_ratio)
+        colsize!(figlayout, 2, c_ratio)
+        @show ax_txt.layoutobservables.computedbbox.val.widths
+        if ax_txt.layoutobservables.computedbbox.val.widths[1] < 130
+            rowsize!(figlayout, 2, 130)
+        end
+        if ax_txt.layoutobservables.computedbbox.val.widths[2] < 260
+            colsize!(figlayout, 2, 260)
+        end
+        @show ax_txt.layoutobservables.computedbbox.val.widths
 
         register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
         register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
-        position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(pos_o)...)))
         register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, aspects=aspects)
 
     else
@@ -339,7 +356,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         ylims!(sz[2],0) # reverse y !
         crosshair(sl_x,sl_y, sz[1:2],color=color)
         ref_ax = [ax_im]
-        ax_txt = Axis(fig[2,1], backgroundcolor=:white) # title=title, 
+        ax_txt = Axis(fig[2,1], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
         rowsize!(figlayout, 2, 180)
         hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false    
         register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, aspects=aspects)
