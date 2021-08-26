@@ -2,7 +2,7 @@
 # ]activate .
 ## interactive example:
 module OrthoView
-export ortho_view, test_ortho_view
+export ortho!, test_ortho_view
 
 using GLMakie
 using GLMakie.FileIO
@@ -152,7 +152,7 @@ function register_panel_interactions!(ax, sl_x, sl_y, sl_z, ref_ax; key_buffer="
     deregister_interaction!(ax, :rectanglezoom)
     sz = (max(to_value(sl_x.range)[1],to_value(sl_x.range)[end]), max(to_value(sl_y.range)[1],to_value(sl_y.range)[end])) # (to_value(ax.limits)[1][2] , to_value(ax.limits)[2][2])
     ctr = sz .÷ 2 .+ 1
-    pos = Node([Point2f0(0)])
+    # pos = Node([Point2f0(0)])
 
     register_interaction!(ax, :my_mouse_interaction) do event::MouseEvent, axis
         if event.type === MouseEventTypes.leftclick || event.type === MouseEventTypes.leftdragstart || 
@@ -231,10 +231,17 @@ function get_slice(data, pos, dims=(1,2))
 end
 
 
-function ortho_view(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
+function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
     sz = size(myim)
 
+    if isa(fig,GridSubposition)
+        figlayout = fig .= GridLayout        
+    else
+        figlayout = fig.layout
+    end
+
     sl_z = nothing
+    prev_position =  Node([Point3f0(0)])
     if ndims(myim) > 2 && sz[3] > 1
         grid_size = 3
         sl_x = Slider(fig[1,1,Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
@@ -260,7 +267,7 @@ function ortho_view(fig, myim; title = "Image", color=:red, markersize = 40.0, a
         ax_im_xz = Axis(fig[2,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
         hidedecorations!(ax_im_xz, grid = false); ax_im_xz.xrectzoom = false; ax_im_xz.yrectzoom = false
         # myim_xz = @lift(myim[:,round(Int,$(sl_y.value)),:])
-        myim_xz = @lift(get_slice(myim, $position, (1,3)))
+        myim_xz = @lift(get_slice(myim, $position, (1,3), prev_position))
         im_xz = image!(myim_xz, interpolate=false)
         xlims!(0,sz[1])
         ylims!(sz[3],0) # no reverse
@@ -295,8 +302,8 @@ function ortho_view(fig, myim; title = "Image", color=:red, markersize = 40.0, a
         ax_txt = Axis(fig[2,2], backgroundcolor=:white) # title=title, 
         hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
 
-        rowsize!(fig.layout, 2, Auto(aspects[3]*sz[3]/(aspects[2]*sz[2])))
-        colsize!(fig.layout, 2, Auto(aspects[3]*sz[3]/(aspects[1]*sz[1])))
+        rowsize!(figlayout, 2, Auto(aspects[3]*sz[3]/(aspects[2]*sz[2])))
+        colsize!(figlayout, 2, Auto(aspects[3]*sz[3]/(aspects[1]*sz[1])))
 
         register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
         register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
@@ -350,7 +357,7 @@ function ortho_view(fig, myim; title = "Image", color=:red, markersize = 40.0, a
     return fig # , grid_size
 end
 
-function ortho_view(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
+function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
     sz = size(myim) .* aspects
     fak = preferred_size ./ max(sz...)
     if length(sz) > 2
@@ -359,14 +366,14 @@ function ortho_view(myim; preferred_size = 600, title = "Image", color=:red, mar
         res = fak .* (sz[1], sz[2])
     end
     fig = Figure(resolution=res)
-    ortho_view(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects)
+    ortho!(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects)
     return fig
 end
 
 function test_ortho_view(;aspects=(1,1,1,1))
     set_theme!(theme_black())
     obj = rand(10,20,30,40) # testimage("simple_3d_ball.tif")
-    ortho_view(obj, aspects=aspects)
+    ortho!(obj, aspects=aspects)
 end
 
 end
