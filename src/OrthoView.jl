@@ -328,8 +328,10 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         #txt = @lift(get_text(title, to_value($(position)), myim, aspects))
         #ax_txt = Textbox(fig[2,2:2+show_cbar], placeholder = txt, width = 300)
     
-        ax_txt = Axis(fig[2,2:2+show_cbar], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
-        hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
+        txt = @lift(get_text(title, to_value($(position)), myim, aspects))
+        my_label = Label(fig[2,2:2+show_cbar],txt, halign = :left, valign = :top)
+        #ax_txt = Axis(fig[2,2:2+show_cbar], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
+        #hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
 
         r_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
         c_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
@@ -381,12 +383,13 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         ylims!(sz[2],0) # reverse y !
         crosshair(sl_x,sl_y, sz[1:2],color=color)
         ref_ax = [ax_im]
-        #txt = @lift(get_text(title, to_value($(position)), myim, aspects))
+        txt = @lift(get_text(title, to_value($(position)), myim, aspects))
+        my_label = Label(fig[2,1:1+show_cbar],txt, halign = :left, valign = :top)
         #ax_txt = Textbox(fig[2,1:1+show_cbar], placeholder = txt, width = 300)
 
-        ax_txt = Axis(fig[2,1:1+show_cbar], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
-        rowsize!(fig, 2, 180)
-        hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
+        #ax_txt = Axis(fig[2,1:1+show_cbar], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
+        #rowsize!(fig, 2, 180)
+        #hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
 
         if show_cbar
             cbar = Colorbar(fig[1,2], im, label = "Brightness", alignmode = Outside())
@@ -401,9 +404,9 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     end
 
     register_panel_interactions!(ax_im, sl_x, sl_y, sl_z, ref_ax)
-    xlims!(ax_txt,-4,100); ylims!(ax_txt,-4,100)
-    txt = @lift(get_text(title, to_value($(position)), myim, aspects))
-    text!(ax_txt, txt, position = Point(0,99), color = :black, align = (:left, :top), justification = :left)
+    #xlims!(ax_txt,-4,100); ylims!(ax_txt,-4,100)
+    # txt = @lift(get_text(title, to_value($(position)), myim, aspects))
+    # text!(ax_txt, txt, position = Point(0,99), color = :black, align = (:left, :top), justification = :left)
 
     abs_zoom = get_max_zoom(sz.*aspects, ax_im, ax_zy, ax_xz)
     zoom_all(abs_zoom, nothing, ax_im, ax_xz, ax_zy, aspects, sz .÷ 2 .+1, sz)
@@ -415,10 +418,10 @@ function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markers
     sz = size(myim) .* aspects
     fak = preferred_size ./ max(sz...)
     if length(sz) > 2 && sz[3] != 1
-        sz3 = max(fak .* sz[3],210)
+        sz3 = max(fak .* sz[3],160)
         res = fak .* (sz[1]+sz3, sz[2]+sz[3])
     else
-        res = fak .* (sz[1], sz[2])  .+ (30*colorbar,220) # additional space for cbar and text
+        res = fak .* (sz[1], sz[2])  .+ (30*colorbar,160) # additional space for cbar and text
     end
     fig = Figure(resolution=res)
     ortho!(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects, colorbar=colorbar)
