@@ -145,7 +145,7 @@ function get_text(name, pos, data, aspects)
             end
         end
     end
-    str *= "pos: $(pos)\nctr: $(rel_pos)\nscaled ctr: $(rel_pos .* aspects)\nsize:$(size(data))"
+    str *= "pos: $(pos)\nctr: $(rel_pos)\nsc. ctr: $(rel_pos .* aspects)\nsz:$(size(data))"
 
 end
 
@@ -254,17 +254,17 @@ end
 function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
     sz = size(myim)
 
-    if isa(fig,GridSubposition)
-        figlayout = fig .= GridLayout        
+    fig = if isa(fig, Figure)
+        @show fig[1,1] = GridLayout()
     else
-        figlayout = fig.layout
+        @show fig[] = GridLayout()
     end
 
     show_cbar = true
 
     ax_im = ax_xz = ax_zy = nothing
     sl_z = nothing
-    prev_position =  Node([Point3f0(0)])
+
     if ndims(myim) > 2 && sz[3] > 1
         # grid_size = 3
         sl_x = Slider(fig[1,1,Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
@@ -323,24 +323,24 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         r_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
         c_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
-        rowsize!(figlayout, 2, r_ratio)
-        colsize!(figlayout, 2, c_ratio)
+        rowsize!(fig, 2, r_ratio)
+        colsize!(fig, 2, c_ratio)
         @show ax_txt.layoutobservables.computedbbox.val.widths
-        if ax_txt.layoutobservables.computedbbox.val.widths[1] < 300
-            colsize!(figlayout, 2, 180)
+        if ax_txt.layoutobservables.computedbbox.val.widths[1] < 350 # strange why this does not correspond to the number to set to...
+            colsize!(fig, 2, 180)
         end
         if ax_txt.layoutobservables.computedbbox.val.widths[2] < 130
-            rowsize!(figlayout, 2, 130)
+            rowsize!(fig, 2, 130)
         end
         @show ax_txt.layoutobservables.computedbbox.val.widths
-
-        register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
-        register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
-        register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, aspects=aspects)
         if show_cbar
             cbar = Colorbar(fig[1,3], im, label = "Brightness", alignmode = Outside())
             cbar.width = 20
         end
+
+        register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
+        register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
+        register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, aspects=aspects)
     else
         ax_im = Axis(fig[1,1], title=title, yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
         sl_x = Slider(fig[1,1, Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
@@ -365,14 +365,15 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         crosshair(sl_x,sl_y, sz[1:2],color=color)
         ref_ax = [ax_im]
         ax_txt = Axis(fig[2,1:1+show_cbar], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
-        rowsize!(figlayout, 2, 180)
+        rowsize!(fig, 2, 180)
         hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
-        register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, aspects=aspects)
-
         if show_cbar
             cbar = Colorbar(fig[1,2], im, label = "Brightness", alignmode = Outside())
             cbar.width = 20
         end
+
+        register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, aspects=aspects)
+
     end
 
     register_panel_interactions!(ax_im, sl_x, sl_y, sl_z, ref_ax)
@@ -397,11 +398,12 @@ end
 
 function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
     sz = size(myim) .* aspects
-    fak = preferred_size ./ max(sz...)
+    @show fak = preferred_size ./ max(sz...)
     if length(sz) > 2 && sz[3] != 1
-        res = fak .* (sz[1]+sz[3], sz[2]+sz[3])
+        sz3 = max(fak .* sz[3],210)
+        res = fak .* (sz[1]+sz3, sz[2]+sz[3])
     else
-        res = fak .* (sz[1] + 30, sz[2])  .+ (0,220) # additional space for cbar and text
+        res = fak .* (sz[1], sz[2])  .+ (30,220) # additional space for cbar and text
     end
     fig = Figure(resolution=res)
     ortho!(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects)
