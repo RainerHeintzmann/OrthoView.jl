@@ -251,7 +251,7 @@ function obs_from_sliders(sls)
     position
 end
 
-function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
+function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true)
     sz = size(myim)
 
     fig = if isa(fig, Figure)
@@ -260,7 +260,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         @show fig[] = GridLayout()
     end
 
-    show_cbar = true
+    show_cbar = colorbar
 
     ax_im = ax_xz = ax_zy = nothing
     sl_z = nothing
@@ -396,17 +396,17 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     return fig # , grid_size
 end
 
-function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)))
+function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true)
     sz = size(myim) .* aspects
     @show fak = preferred_size ./ max(sz...)
     if length(sz) > 2 && sz[3] != 1
         sz3 = max(fak .* sz[3],210)
         res = fak .* (sz[1]+sz3, sz[2]+sz[3])
     else
-        res = fak .* (sz[1], sz[2])  .+ (30,220) # additional space for cbar and text
+        res = fak .* (sz[1], sz[2])  .+ (30*colorbar,220) # additional space for cbar and text
     end
     fig = Figure(resolution=res)
-    ortho!(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects)
+    ortho!(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects, colorbar=colorbar)
     return fig
 end
 
