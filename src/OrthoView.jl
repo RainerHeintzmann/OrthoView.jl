@@ -218,7 +218,11 @@ function get_pos(pos)
         Tuple(round(Int,p) for p in pos)
 end
 
-function get_slice(data, pos, dims=(1,2)) 
+function apply_min_max_gamma(min, max, gamma)
+    (dat) -> ((dat - min) / (max-min))^gamma
+end
+
+function get_slice(data, pos, dims=(1,2), min_max_val=extrema(data)) 
     idx = Tuple((d in dims) ? Colon() : pos[d] for d = 1:length(pos))
     if dims[1] > dims[2]
         res = transpose(@view data[idx...])
@@ -228,6 +232,7 @@ function get_slice(data, pos, dims=(1,2))
     if isa(res[1],Complex)
         res = abs2.(res)
     end
+    # res = map(apply_min_max_gamma(min_max_val[1], min_max_val[2], 1.0f0), res)
     return res
 end
 
@@ -255,15 +260,17 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     sz = size(myim)
 
     fig = if isa(fig, Figure)
-        @show fig[1,1] = GridLayout()
+        fig[1,1] = GridLayout()
     else
-        @show fig[] = GridLayout()
+        fig[] = GridLayout()
     end
 
     show_cbar = colorbar
 
     ax_im = ax_xz = ax_zy = nothing
     sl_z = nothing
+
+    ColOptions = ["greys","greens","reds", "blues","RdBu","heat", "viridis", "plasma", "magma", "inferno"]
 
     if ndims(myim) > 2 && sz[3] > 1
         # grid_size = 3
@@ -318,6 +325,9 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         ref_ax = [ax_im]
 
+        #txt = @lift(get_text(title, to_value($(position)), myim, aspects))
+        #ax_txt = Textbox(fig[2,2:2+show_cbar], placeholder = txt, width = 300)
+    
         ax_txt = Axis(fig[2,2:2+show_cbar], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
         hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
 
@@ -325,14 +335,15 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         c_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
         rowsize!(fig, 2, r_ratio)
         colsize!(fig, 2, c_ratio)
-        @show ax_txt.layoutobservables.computedbbox.val.widths
-        if ax_txt.layoutobservables.computedbbox.val.widths[1] < 350 # strange why this does not correspond to the number to set to...
-            colsize!(fig, 2, 180)
-        end
-        if ax_txt.layoutobservables.computedbbox.val.widths[2] < 130
-            rowsize!(fig, 2, 130)
-        end
-        @show ax_txt.layoutobservables.computedbbox.val.widths
+
+        # @show ax_txt.layoutobservables.computedbbox.val.widths
+        # if ax_txt.layoutobservables.computedbbox.val.widths[1] < 350 # strange why this does not correspond to the number to set to...
+        #     colsize!(fig, 2, 180)
+        # end
+        # if ax_txt.layoutobservables.computedbbox.val.widths[2] < 130
+        #     rowsize!(fig, 2, 130)
+        # end
+        # @show ax_txt.layoutobservables.computedbbox.val.widths
         if show_cbar
             cbar = Colorbar(fig[1,3], im, label = "Brightness", alignmode = Outside())
             cbar.width = 20
@@ -341,6 +352,12 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
         register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
         register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, aspects=aspects)
+        menu = Menu(fig[3,1], options = ColOptions)
+        on(menu.selection) do s
+            im.colormap = s
+            im_xz.colormap = s
+            im_zy.colormap = s
+         end
     else
         ax_im = Axis(fig[1,1], title=title, yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
         sl_x = Slider(fig[1,1, Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
@@ -364,31 +381,29 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         ylims!(sz[2],0) # reverse y !
         crosshair(sl_x,sl_y, sz[1:2],color=color)
         ref_ax = [ax_im]
+        #txt = @lift(get_text(title, to_value($(position)), myim, aspects))
+        #ax_txt = Textbox(fig[2,1:1+show_cbar], placeholder = txt, width = 300)
+
         ax_txt = Axis(fig[2,1:1+show_cbar], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
         rowsize!(fig, 2, 180)
         hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
+
         if show_cbar
             cbar = Colorbar(fig[1,2], im, label = "Brightness", alignmode = Outside())
             cbar.width = 20
         end
 
         register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, aspects=aspects)
-
+        menu = Menu(fig[3,1], options = ColOptions)
+        on(menu.selection) do s
+            im.colormap = s
+         end     
     end
 
     register_panel_interactions!(ax_im, sl_x, sl_y, sl_z, ref_ax)
-
     xlims!(ax_txt,-4,100); ylims!(ax_txt,-4,100)
     txt = @lift(get_text(title, to_value($(position)), myim, aspects))
     text!(ax_txt, txt, position = Point(0,99), color = :black, align = (:left, :top), justification = :left)
-
-    #menu = Menu(fig, options = ["viridis", "heat", "plasma", "magma", "inferno"])
-    #on(menu.selection) do s
-    #    im.colormap = s
-    #end
-
-    # hm_sublayout = GridLayout()
-    # fig[1:1+grid_size-1,1:1+grid_size-1] = hm_sublayout
 
     abs_zoom = get_max_zoom(sz.*aspects, ax_im, ax_zy, ax_xz)
     zoom_all(abs_zoom, nothing, ax_im, ax_xz, ax_zy, aspects, sz .÷ 2 .+1, sz)
@@ -398,7 +413,7 @@ end
 
 function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true)
     sz = size(myim) .* aspects
-    @show fak = preferred_size ./ max(sz...)
+    fak = preferred_size ./ max(sz...)
     if length(sz) > 2 && sz[3] != 1
         sz3 = max(fak .* sz[3],210)
         res = fak .* (sz[1]+sz3, sz[2]+sz[3])
