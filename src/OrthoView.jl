@@ -102,6 +102,83 @@ function zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, aspects, ctr, sz)
     return abs_zoom
 end
 
+function on_color_triangle(cb)
+    scene = cb.parent.scene
+    mouse = scene.events.mouseposition[]
+    c_start = cb.layoutobservables.suggestedbbox.val.origin
+    c_stop = cb.layoutobservables.suggestedbbox.val.origin .+ cb.layoutobservables.suggestedbbox.val.widths
+    d_top = abs(mouse[2] .- c_start[2])
+    d_buttom = abs(mouse[2] .- c_stop[2])
+    if !(all(mouse.>c_start) && all(mouse .<c_stop))
+        return 0;
+    elseif (d_top < 20)
+        return -1;
+    elseif (d_buttom < 20)
+        return 1;
+    else
+        return 0;
+    end
+end
+
+function in_colorbar(cb)
+    scene = cb.parent.scene
+    mouse = scene.events.mouseposition[]
+    c_start = cb.layoutobservables.suggestedbbox.val.origin
+    c_stop = cb.layoutobservables.suggestedbbox.val.origin .+ cb.layoutobservables.suggestedbbox.val.widths
+    return (all(mouse.>c_start) && all(mouse .<c_stop))
+end
+
+function register_colorbar_scroll!(cb, colorrange, default_range=(0.0,1.0), high_col=:red, low_col=:blue)
+    scene = cb.parent.scene
+    on(events(scene).scroll, priority = 2) do event
+        if ! (in_colorbar(cb))
+            return Consume(false)
+        end 
+        c_min,c_max = to_value(colorrange)
+        zoom_dir = to_value(event[2]) # event.y
+        c_rng = (c_max - c_min) * 1.1 ^ -zoom_dir
+        if ispressed(scene,Mouse.middle) || ispressed(scene, Keyboard.left_shift) || ispressed(scene, Keyboard.right_shift) || (on_color_triangle(cb) == -1)
+            c_min = c_max - c_rng
+        else
+            c_max = c_min + c_rng
+        end
+        colorrange[] = (c_min,c_max)
+        return Consume(true) # for now prevent the zoom
+    end
+    on(events(scene).mousebutton, priority = 2) do event
+        if ! (in_colorbar(cb))
+            return Consume(false)
+        end 
+        if event.button == Mouse.left && event.action == Mouse.release
+            if on_color_triangle(cb) == 1
+                if isnothing(to_value(cb.highclip))
+                    cb.highclip[] = high_col
+                else
+                    cb.highclip[] = nothing
+                end
+                return Consume(true) # for now prevent the zoom
+            end
+            if on_color_triangle(cb) == -1
+                if isnothing(to_value(cb.lowclip))
+                    cb.lowclip[] = low_col
+                else
+                    cb.lowclip[] = nothing
+                end
+                return Consume(true) # for now prevent the zoom
+            end
+            if ispressed(scene, Keyboard.left_shift) || ispressed(scene, Keyboard.right_shift)
+                max_r = max(default_range...)
+                colorrange[] = (-max_r,max_r)
+            elseif ispressed(scene, Keyboard.left_control) || ispressed(scene, Keyboard.left_control)
+                colorrange[] = (0.0,default_range[2])
+            else 
+                colorrange[] = default_range
+            end
+        end
+        return Consume(true) # for now prevent the zoom
+    end
+end
+
 function register_panel_zoom_link!(ax, ctr, sz, ax_xz=nothing, ax_zy=nothing; aspects=ones(length(sz)))
 
     abs_zoom = get_max_zoom(sz.*aspects, ax, ax_zy, ax_xz)
@@ -270,7 +347,8 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     ax_im = ax_xz = ax_zy = nothing
     sl_z = nothing
 
-    ColOptions = ["greys","greens","reds", "blues","RdBu","heat", "viridis", "plasma", "magma", "inferno"]
+    col_options = ["greys","greens","reds", "blues","RdBu","heat", "viridis", "plasma", "magma", "inferno"]
+    colorrange = Node((0.0,1.0))
 
     if ndims(myim) > 2 && sz[3] > 1
         # grid_size = 3
@@ -297,64 +375,55 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
             myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, $(sl_z.value), $(pos_o)...), (1,2)))
             position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(pos_o)...)))
         end
-        im_xz = image!(myim_xz, interpolate=false)
+        im_xz = heatmap!(myim_xz, interpolate=false, highclip=:red, lowclip=:blue, colormap=:grays)
         xlims!(0,sz[1])
         ylims!(sz[3],0) # no reverse
         crosshair(sl_x,sl_z, (sz[1],sz[3]), color=color)
 
         ax_im_zy = Axis(fig[1,2], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
         hidedecorations!(ax_im_zy, grid = false); ax_im_zy.xrectzoom = false; ax_im_zy.yrectzoom = false
-        im_zy = image!(myim_zy, interpolate=false)
+        im_zy = heatmap!(myim_zy, interpolate=false, highclip=:red, lowclip=:blue, colormap=:grays)
         xlims!(0,sz[3])
         ylims!(sz[1],0) # no reverse
         crosshair(sl_z,sl_y, (sz[3],sz[2]), color=color)
 
-        #  aspect = DataAspect(), 
         ax_im = Axis(fig[1,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
         hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
-        im = image!(myim_xy, interpolate=false)
-        #xlims!(4,5)
-        #ylims!(4,5)
-        # ax_im.aspect = DataAspect()
+        im = heatmap!(myim_xy, interpolate=false, highclip=:red, lowclip=:blue, colormap=:grays)
         xlims!(0,sz[1])
         ylims!(sz[2],0) # reverse y !
         crosshair(sl_x,sl_y, (sz[1],sz[2]), color=color)
 
+        colorrange[]=(
+            min(to_value(im.attributes.colorrange)[1],to_value(im_zy.attributes.colorrange)[1],to_value(im_xz.attributes.colorrange)[1]),
+            max.(to_value(im.attributes.colorrange)[2],to_value(im_zy.attributes.colorrange)[2],to_value(im_xz.attributes.colorrange)[2]))
+    
+        im.attributes.colorrange=colorrange
+        im_xz.attributes.colorrange=colorrange
+        im_zy.attributes.colorrange=colorrange
         # linkxaxes!(ax_im, ax_im_xz) # to ensure the scrolling behaves correctly
         # linkyaxes!(ax_im, ax_im_zy)
 
         ref_ax = [ax_im]
 
-        #txt = @lift(get_text(title, to_value($(position)), myim, aspects))
-        #ax_txt = Textbox(fig[2,2:2+show_cbar], placeholder = txt, width = 300)
-    
         txt = @lift(get_text(title, to_value($(position)), myim, aspects))
         my_label = Label(fig[2,2:2+show_cbar],txt, halign = :left, valign = :top)
-        #ax_txt = Axis(fig[2,2:2+show_cbar], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
-        #hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
 
         r_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
         c_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
         rowsize!(fig, 2, r_ratio)
         colsize!(fig, 2, c_ratio)
 
-        # @show ax_txt.layoutobservables.computedbbox.val.widths
-        # if ax_txt.layoutobservables.computedbbox.val.widths[1] < 350 # strange why this does not correspond to the number to set to...
-        #     colsize!(fig, 2, 180)
-        # end
-        # if ax_txt.layoutobservables.computedbbox.val.widths[2] < 130
-        #     rowsize!(fig, 2, 130)
-        # end
-        # @show ax_txt.layoutobservables.computedbbox.val.widths
         if show_cbar
-            cbar = Colorbar(fig[1,3], im, label = "Brightness", alignmode = Outside())
-            cbar.width = 20
+            # label = "Brightness", 
+            cbar = Colorbar(fig[1,3], im, alignmode = Outside(), width=20, ticklabelspace=30f0)
+            register_colorbar_scroll!(cbar, colorrange, to_value(colorrange))
         end
 
         register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
         register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
         register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, aspects=aspects)
-        menu = Menu(fig[3,1], options = ColOptions)
+        menu = Menu(fig[3,1], options = col_options)
         on(menu.selection) do s
             im.colormap = s
             im_xz.colormap = s
@@ -378,35 +447,32 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
             myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, 1, $(pos_o)...), (1,2)))
             position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(pos_o)...)))
         end
-        im = image!(myim_xy, interpolate=false)
+        im = heatmap!(myim_xy, interpolate=false, highclip=:red, lowclip=:blue, colormap=:grays)
         xlims!(0,sz[1])
         ylims!(sz[2],0) # reverse y !
         crosshair(sl_x,sl_y, sz[1:2],color=color)
         ref_ax = [ax_im]
         txt = @lift(get_text(title, to_value($(position)), myim, aspects))
         my_label = Label(fig[2,1:1+show_cbar],txt, halign = :left, valign = :top)
-        #ax_txt = Textbox(fig[2,1:1+show_cbar], placeholder = txt, width = 300)
-
-        #ax_txt = Axis(fig[2,1:1+show_cbar], backgroundcolor=:white, xzoomlock=true, yzoomlock=true, xpanlock=true, ypanlock=true, xrectzoom=false, yrectzoom=false) # title=title, 
-        #rowsize!(fig, 2, 180)
-        #hidedecorations!(ax_txt, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
 
         if show_cbar
-            cbar = Colorbar(fig[1,2], im, label = "Brightness", alignmode = Outside())
-            cbar.width = 20
+            # label = "Brightness", 
+            cbar = Colorbar(fig[1,2], im, alignmode = Outside(), width=20, ticklabelspace=30f0)
+            register_colorbar_scroll!(cbar, colorrange, to_value(colorrange))
         end
 
         register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, aspects=aspects)
-        menu = Menu(fig[3,1], options = ColOptions)
+
+        colorrange[] = to_value(im.attributes.colorrange)    
+        im.attributes.colorrange=colorrange
+
+        menu = Menu(fig[3,1], options = col_options)
         on(menu.selection) do s
             im.colormap = s
          end     
     end
 
     register_panel_interactions!(ax_im, sl_x, sl_y, sl_z, ref_ax)
-    #xlims!(ax_txt,-4,100); ylims!(ax_txt,-4,100)
-    # txt = @lift(get_text(title, to_value($(position)), myim, aspects))
-    # text!(ax_txt, txt, position = Point(0,99), color = :black, align = (:left, :top), justification = :left)
 
     abs_zoom = get_max_zoom(sz.*aspects, ax_im, ax_zy, ax_xz)
     zoom_all(abs_zoom, nothing, ax_im, ax_xz, ax_zy, aspects, sz .÷ 2 .+1, sz)
