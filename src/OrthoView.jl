@@ -359,16 +359,16 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     if ndims(myim) > 2 && sz[3] > 1
         lp_menu = fig[3,1:3] = GridLayout()
     else
-        lp_menu = fig[2,1:2] = GridLayout()
+        lp_menu = fig[3,1:3] = GridLayout()
     end
     ## fill the lower menu bar with content:
-    menu = Menu(lp_menu[1,1], options = col_options, label="Color", startvalue=1)
+    menu = Menu(lp_menu[1,1], options = col_options, label="Color", prompt="Colormap")
     on(menu.selection) do s
         my_rawmap[] = cmap(s, N=4096)
     end
     # Gamma slider
     Label(lp_menu[1,2],"Gamma:", halign = :left, valign = :center)
-    sg = Slider(lp_menu[1,3], range = -4:0.1:4, horizontal = true, startvalue = 0.0, align=Inside(), label="Gamma")
+    sg = Slider(lp_menu[1,3], range = -2:0.1:2, horizontal = true, startvalue = 0.0, align=Inside(), label="Gamma")
     gamma_txt = @lift( "$(@sprintf("%.2f",10.0^$(sg.value)))")
     Label(lp_menu[1,4],gamma_txt, halign = :left, valign = :center)
     gamma = @lift(10.0 ^ $(sg.value))
@@ -467,10 +467,14 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
             myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, 1, $(pos_o)...), (1,2)))
             position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(pos_o)...)))
         end
-        im = heatmap!(myim_xy, interpolate=false, highclip=:red, lowclip=:blue, colormap=:grays)
+        im = heatmap!(myim_xy, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
         xlims!(0,sz[1])
         ylims!(sz[2],0) # reverse y !
         crosshair(sl_x,sl_y, sz[1:2],color=color)
+        
+        colorrange[] = to_value(im.attributes.colorrange)    
+        im.attributes.colorrange=colorrange
+
         ref_ax = [ax_im]
         txt = @lift(get_text(title, to_value($(position)), myim, aspects))
         my_label = Label(fig[2,1:1+show_cbar],txt, halign = :left, valign = :top)
@@ -483,13 +487,6 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, aspects=aspects)
 
-        colorrange[] = to_value(im.attributes.colorrange)    
-        im.attributes.colorrange=colorrange
-
-        menu = Menu(fig[3,1], options = col_options)
-        on(menu.selection) do s
-            im.colormap = s
-         end     
     end
 
     register_panel_interactions!(ax_im, sl_x, sl_y, sl_z, ref_ax)
