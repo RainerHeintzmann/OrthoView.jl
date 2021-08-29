@@ -9,6 +9,7 @@ using GLMakie.FileIO
 using Printf
 using ColorTypes  # for RGB type
 using ColorSchemes
+using PerceptualColourMaps
 
 function get_crosshair_xs(px, sx, gap)
     xs = [0f0,px-gap,px+gap,sx,px,px,px,px]
@@ -333,6 +334,10 @@ function obs_from_sliders(sls)
     position
 end
 
+function apply_gamma(rgba, gamma) 
+    ColorTypes.RGBA(rgba.r^gamma, rgba.g^gamma, rgba.b^gamma, rgba.alpha)
+end
+
 function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true)
     sz = size(myim)
 
@@ -347,14 +352,35 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     ax_im = ax_xz = ax_zy = nothing
     sl_z = nothing
 
-    col_options = ["greys","greens","reds", "blues","RdBu","heat", "viridis", "plasma", "magma", "inferno"]
+    col_options = ["L1","L2","L3","L4","C1","C2","C3","R1","R2","R3"]
     colorrange = Node((0.0,1.0))
+    my_rawmap = Node(cmap("L1", N=4096))
+
+    if ndims(myim) > 2 && sz[3] > 1
+        lp_menu = fig[3,1:3] = GridLayout()
+    else
+        lp_menu = fig[2,1:2] = GridLayout()
+    end
+    ## fill the lower menu bar with content:
+    menu = Menu(lp_menu[1,1], options = col_options, label="Color", startvalue=1)
+    on(menu.selection) do s
+        my_rawmap[] = cmap(s, N=4096)
+    end
+    # Gamma slider
+    Label(lp_menu[1,2],"Gamma:", halign = :left, valign = :center)
+    sg = Slider(lp_menu[1,3], range = -4:0.1:4, horizontal = true, startvalue = 0.0, align=Inside(), label="Gamma")
+    gamma_txt = @lift( "$(@sprintf("%.2f",10.0^$(sg.value)))")
+    Label(lp_menu[1,4],gamma_txt, halign = :left, valign = :center)
+    gamma = @lift(10.0 ^ $(sg.value))
+    @show to_value(gamma)
+    my_cmap = @lift(apply_gamma.(to_value($(my_rawmap)), to_value($(gamma))))
 
     if ndims(myim) > 2 && sz[3] > 1
         # grid_size = 3
         sl_x = Slider(fig[1,1,Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
         sl_y = Slider(fig[1,1,Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
         sl_z = Slider(fig[1,2,Bottom()], range = 1:sz[3], horizontal = true, startvalue = sz[3]/2+1)
+
         if ndims(myim) > 8
             error("Maximal number of dimensions exceeded.")
         end
@@ -375,21 +401,21 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
             myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, $(sl_z.value), $(pos_o)...), (1,2)))
             position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(pos_o)...)))
         end
-        im_xz = heatmap!(myim_xz, interpolate=false, highclip=:red, lowclip=:blue, colormap=:grays)
+        im_xz = heatmap!(myim_xz, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
         xlims!(0,sz[1])
         ylims!(sz[3],0) # no reverse
         crosshair(sl_x,sl_z, (sz[1],sz[3]), color=color)
 
         ax_im_zy = Axis(fig[1,2], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
         hidedecorations!(ax_im_zy, grid = false); ax_im_zy.xrectzoom = false; ax_im_zy.yrectzoom = false
-        im_zy = heatmap!(myim_zy, interpolate=false, highclip=:red, lowclip=:blue, colormap=:grays)
+        im_zy = heatmap!(myim_zy, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
         xlims!(0,sz[3])
         ylims!(sz[1],0) # no reverse
         crosshair(sl_z,sl_y, (sz[3],sz[2]), color=color)
 
         ax_im = Axis(fig[1,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
         hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
-        im = heatmap!(myim_xy, interpolate=false, highclip=:red, lowclip=:blue, colormap=:grays)
+        im = heatmap!(myim_xy, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
         xlims!(0,sz[1])
         ylims!(sz[2],0) # reverse y !
         crosshair(sl_x,sl_y, (sz[1],sz[2]), color=color)
@@ -423,12 +449,6 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
         register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
         register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, aspects=aspects)
-        menu = Menu(fig[3,1], options = col_options)
-        on(menu.selection) do s
-            im.colormap = s
-            im_xz.colormap = s
-            im_zy.colormap = s
-         end
     else
         ax_im = Axis(fig[1,1], title=title, yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
         sl_x = Slider(fig[1,1, Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
