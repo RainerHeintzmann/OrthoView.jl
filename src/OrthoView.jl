@@ -23,12 +23,12 @@ end
 
 function crosshair(sl_x,sl_y, sz; markersize=0.7, color=:red)
     if isa(markersize, Slider)
-        cross_xs = @lift(get_crosshair_xs($(sl_x.value)-0.5f0, sz[1], Float32($(markersize.value))))
-        cross_ys = @lift(get_crosshair_ys($(sl_y.value)-0.5f0, sz[2], Float32($(markersize.value))))
+        cross_xs = @lift(get_crosshair_xs($(sl_x.value), sz[1], Float32($(markersize.value))))
+        cross_ys = @lift(get_crosshair_ys($(sl_y.value), sz[2], Float32($(markersize.value))))
     else
         gap = Float32(to_value(markersize))
-        cross_xs = @lift(get_crosshair_xs($(sl_x.value)-0.5f0, sz[1], gap))
-        cross_ys = @lift(get_crosshair_ys($(sl_y.value)-0.5f0, sz[2], gap))
+        cross_xs = @lift(get_crosshair_xs($(sl_x.value), sz[1], gap))
+        cross_ys = @lift(get_crosshair_ys($(sl_y.value), sz[2], gap))
     end
     linesegments!(cross_xs, cross_ys, color=color, linewidth=3)
 end
@@ -237,8 +237,8 @@ function register_panel_interactions!(ax, sl_x, sl_y, sl_z, ref_ax; key_buffer="
         if event.type === MouseEventTypes.leftclick || event.type === MouseEventTypes.leftdragstart || 
             event.type === MouseEventTypes.leftdragstop || event.type === MouseEventTypes.leftdrag || 
             event.type === MouseEventTypes.middledragstart || event.type === MouseEventTypes.middledragstop || event.type === MouseEventTypes.middledrag
-            set_close_to!(sl_x, event.data[1] + 0.5f0)
-            set_close_to!(sl_y, event.data[2] + 0.5f0)
+            set_close_to!(sl_x, event.data[1] )
+            set_close_to!(sl_y, event.data[2] )
             ref_ax[1] = ax
         end
     end
@@ -342,9 +342,9 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     sz = size(myim)
 
     fig = if isa(fig, Figure)
-        fig[1,1] = GridLayout()
+        my_layout = fig[1,1] = GridLayout()
     else
-        fig[] = GridLayout()
+        my_layout = fig[] = GridLayout()
     end
 
     show_cbar = colorbar
@@ -354,25 +354,25 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
     col_options = ["L1","L2","L3","L4","C1","C2","C3","R1","R2","R3"]
     colorrange = Node((0.0,1.0))
-    my_rawmap = Node(cmap("L1", N=4096))
+    N_cmap = 2048
+    my_rawmap = Node(RGBA{Float32}.(cmap("L1", N=N_cmap)))
 
     if ndims(myim) > 2 && sz[3] > 1
         lp_menu = fig[3,1:3] = GridLayout()
     else
-        lp_menu = fig[3,1:3] = GridLayout()
+        lp_menu = fig[3,1:2] = GridLayout()
     end
     ## fill the lower menu bar with content:
     menu = Menu(lp_menu[1,1], options = col_options, label="Color", prompt="Colormap")
     on(menu.selection) do s
-        my_rawmap[] = cmap(s, N=4096)
+        my_rawmap[] = RGBA{Float32}.(cmap(s, N=N_cmap))
     end
     # Gamma slider
     Label(lp_menu[1,2],"Gamma:", halign = :left, valign = :center)
     sg = Slider(lp_menu[1,3], range = -2:0.1:2, horizontal = true, startvalue = 0.0, align=Inside(), label="Gamma")
     gamma_txt = @lift( "$(@sprintf("%.2f",10.0^$(sg.value)))")
     Label(lp_menu[1,4],gamma_txt, halign = :left, valign = :center)
-    gamma = @lift(10.0 ^ $(sg.value))
-    @show to_value(gamma)
+    gamma = @lift(Float32(10f0 ^ $(sg.value)))
     my_cmap = @lift(apply_gamma.(to_value($(my_rawmap)), to_value($(gamma))))
 
     if ndims(myim) > 2 && sz[3] > 1
@@ -389,16 +389,16 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         pos_o = obs_from_sliders(sl_o)
         ax_im_xz = Axis(fig[2,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
         hidedecorations!(ax_im_xz, grid = false); ax_im_xz.xrectzoom = false; ax_im_xz.yrectzoom = false
-        # myim_xz = @lift(myim[:,round(Int,$(sl_y.value)),:])
+
         if isnothing(pos_o)
-            myim_xz = @lift(get_slice(myim, (sl_x.value, $(sl_y.value), sl_z.value), (1,3)))
-            myim_zy = @lift(get_slice(myim, ( $(sl_x.value), sl_y.value, sl_z.value), (3,2)))
-            myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, $(sl_z.value)), (1,2)))
+            myim_xz = @lift(collect(get_slice(myim, (sl_x.value, $(sl_y.value), sl_z.value), (1,3))))
+            myim_zy = @lift(collect(get_slice(myim, ( $(sl_x.value), sl_y.value, sl_z.value), (3,2))))
+            myim_xy = @lift(collect(get_slice(myim, (sl_x.value, sl_y.value, $(sl_z.value)), (1,2))))
             position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value))))
         else
-            myim_xz = @lift(get_slice(myim, (sl_x.value, $(sl_y.value), sl_z.value, $(pos_o)...), (1,3)))
-            myim_zy = @lift(get_slice(myim, ( $(sl_x.value), sl_y.value, sl_z.value, $(pos_o)...), (3,2)))
-            myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, $(sl_z.value), $(pos_o)...), (1,2)))
+            myim_xz = @lift(collect(get_slice(myim, (sl_x.value, $(sl_y.value), sl_z.value, $(pos_o)...), (1,3))))
+            myim_zy = @lift(collect(get_slice(myim, ( $(sl_x.value), sl_y.value, sl_z.value, $(pos_o)...), (3,2))))
+            myim_xy = @lift(collect(get_slice(myim, (sl_x.value, sl_y.value, $(sl_z.value), $(pos_o)...), (1,2))))
             position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(pos_o)...)))
         end
         im_xz = heatmap!(myim_xz, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
@@ -427,24 +427,23 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         im.attributes.colorrange=colorrange
         im_xz.attributes.colorrange=colorrange
         im_zy.attributes.colorrange=colorrange
-        # linkxaxes!(ax_im, ax_im_xz) # to ensure the scrolling behaves correctly
-        # linkyaxes!(ax_im, ax_im_zy)
 
         ref_ax = [ax_im]
 
         txt = @lift(get_text(title, to_value($(position)), myim, aspects))
-        my_label = Label(fig[2,2:2+show_cbar],txt, halign = :left, valign = :top)
-
-        r_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
-        c_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
-        rowsize!(fig, 2, r_ratio)
-        colsize!(fig, 2, c_ratio)
+        my_label = Label(fig[2,2:2+show_cbar],txt, halign = :left, valign = :top, tellheight=false) # 
 
         if show_cbar
             # label = "Brightness", 
-            cbar = Colorbar(fig[1,3], im, alignmode = Outside(), width=20, ticklabelspace=30f0)
+            cbar = Colorbar(fig[1,3], im, alignmode = Outside(), width=15, ticklabelspace=25f0)
             register_colorbar_scroll!(cbar, colorrange, to_value(colorrange))
         end
+        @show r_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
+        @show c_ratio = Auto(aspects[3]*sz[3]/(aspects[1]*sz[1]))
+
+        colsize!(fig, 2, c_ratio)
+        rowsize!(my_layout, 2, r_ratio)
+        rowsize!(my_layout, 3, 30)
 
         register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
         register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
@@ -457,21 +456,21 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         pos_o = obs_from_sliders(sl_o)
         hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
         if isnothing(pos_o)
-            myim_xy = get_slice(myim, (sl_x.value, sl_y.value, 1), (1,2))
+            myim_xy = collect(get_slice(myim, (sl_x.value, sl_y.value, 1), (1,2)))
             if ndims(myim) == 3
                 position = @lift(get_pos(($(sl_x.value), $(sl_y.value),1)))
             else
                 position = @lift(get_pos(($(sl_x.value), $(sl_y.value))))
             end
         else
-            myim_xy = @lift(get_slice(myim, (sl_x.value, sl_y.value, 1, $(pos_o)...), (1,2)))
+            myim_xy = @lift(collect(get_slice(myim, (sl_x.value, sl_y.value, 1, $(pos_o)...), (1,2)))) # is needed due to other positions
             position = @lift(get_pos(($(sl_x.value), $(sl_y.value), 1, $(pos_o)...)))
         end
         im = heatmap!(myim_xy, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
         xlims!(0,sz[1])
         ylims!(sz[2],0) # reverse y !
-        crosshair(sl_x,sl_y, sz[1:2],color=color)
-        
+        crosshair(sl_x,sl_y, sz[1:2], color=color)
+
         colorrange[] = to_value(im.attributes.colorrange)    
         im.attributes.colorrange=colorrange
 
@@ -499,11 +498,15 @@ end
 
 function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true)
     sz = size(myim) .* aspects
-    fak = preferred_size ./ max(sz...)
     if length(sz) > 2 && sz[3] != 1
-        sz3 = max(fak .* sz[3],160)
-        res = fak .* (sz[1]+sz3, sz[2]+sz[3])
+        r_ratio = sz[3]/sz[2] # these ratios will be used in the ortho! function to specify the relative size
+        c_ratio = sz[3]/sz[1]
+        sz = sz[1:3]
+        fak = preferred_size ./ max(sz...)
+        @show sz3 = max(sz[3],160/fak)
+        res = fak .* (sz[1]+sz3, sz[2]+sz[3]) ./ 2 .+ (80*colorbar,70)
     else
+        fak = preferred_size ./ max(sz...)
         res = fak .* (sz[1], sz[2])  .+ (30*colorbar,160) # additional space for cbar and text
     end
     fig = Figure(resolution=res)
