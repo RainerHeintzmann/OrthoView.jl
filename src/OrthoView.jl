@@ -338,9 +338,50 @@ function apply_gamma(rgba, gamma)
     ColorTypes.RGBA(rgba.r^gamma, rgba.g^gamma, rgba.b^gamma, rgba.alpha)
 end
 
+function colormap_line(subfig)
+    col_options = ["L1","L2","L3","L4","C1","C2","C3","R1","R2","R3"]
+    N_cmap = 2048
+    my_rawmap = Node(RGBA{Float32}.(cmap("L1", N=N_cmap)))
+
+    lp_menu = subfig[] = GridLayout()
+    ## fill the lower menu bar with content:
+    @time menu = Menu(lp_menu[1,1], options = col_options, label="Color", prompt="Colormap") # 380 MiB just the menu ...
+    on(menu.selection) do s
+        my_rawmap[] = RGBA{Float32}.(cmap(s, N=N_cmap))
+    end
+    # Gamma slider
+    Label(lp_menu[1,2],"Gamma:", halign = :left, valign = :center) # 5 Mb
+    sg = Slider(lp_menu[1,3], range = -2:0.1:2, horizontal = true, startvalue = 0.0, align=Inside(), label="Gamma")
+    gamma_txt = @lift( "$(@sprintf("%.2f",10.0^$(sg.value)))")
+    Label(lp_menu[1,4],gamma_txt, halign = :left, valign = :center)
+    gamma = @lift(Float32(10f0 ^ $(sg.value)))
+    return @lift(apply_gamma.(to_value($(my_rawmap)), to_value($(gamma))))
+end
+
+# Memory usage:  Menu: 380 Mb
+# Slider, laber, lift: each 5Mb
+# hidedecorations: 132 Mb
+# axis: 27 Mb
+# heatmap: 2 Mb
+# crosshair: 0.26 Mb
+# Colorbar: 48 Mb
+# colsize!: 8.6 Mb
+# rowsize!: 8.6 Mb
+# xlims!: 1 Mb
+# ylims!: 2 Mb
+
+
 function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true)
     sz = size(myim)
 
+    # arguments to hide axes and disable zooming
+    hideaxisargs = Dict(:xrectzoom => false, :yrectzoom=>false, :titlevisible=>false, 
+    :xgridvisible=>false, :ygridvisible=>false, 
+    :xlabelvisible=>false, :ylabelvisible=>false, 
+    :bottomspinevisible=>false, :leftspinevisible=>false, :topspinevisible=>false ,:rightspinevisible=>false,
+    :xticklabelsvisible=>false, :yticklabelsvisible=>false, 
+    :xticksvisible=>false, :yticksvisible=>false)
+    
     fig = if isa(fig, Figure)
         my_layout = fig[1,1] = GridLayout()
     else
@@ -352,28 +393,12 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     ax_im = ax_xz = ax_zy = nothing
     sl_z = nothing
 
-    col_options = ["L1","L2","L3","L4","C1","C2","C3","R1","R2","R3"]
-    colorrange = Node((0.0,1.0))
-    N_cmap = 2048
-    my_rawmap = Node(RGBA{Float32}.(cmap("L1", N=N_cmap)))
-
     if ndims(myim) > 2 && sz[3] > 1
-        lp_menu = fig[3,1:3] = GridLayout()
+        my_cmap = colormap_line(fig[3,1:3]) # 554 Mb
     else
-        lp_menu = fig[3,1:2] = GridLayout()
+        my_cmap = colormap_line(fig[3,1:2])
     end
-    ## fill the lower menu bar with content:
-    menu = Menu(lp_menu[1,1], options = col_options, label="Color", prompt="Colormap")
-    on(menu.selection) do s
-        my_rawmap[] = RGBA{Float32}.(cmap(s, N=N_cmap))
-    end
-    # Gamma slider
-    Label(lp_menu[1,2],"Gamma:", halign = :left, valign = :center)
-    sg = Slider(lp_menu[1,3], range = -2:0.1:2, horizontal = true, startvalue = 0.0, align=Inside(), label="Gamma")
-    gamma_txt = @lift( "$(@sprintf("%.2f",10.0^$(sg.value)))")
-    Label(lp_menu[1,4],gamma_txt, halign = :left, valign = :center)
-    gamma = @lift(Float32(10f0 ^ $(sg.value)))
-    my_cmap = @lift(apply_gamma.(to_value($(my_rawmap)), to_value($(gamma))))
+    colorrange = Node((0.0,1.0))
 
     if ndims(myim) > 2 && sz[3] > 1
         # grid_size = 3
@@ -387,8 +412,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         sl_o = Tuple(Slider(fig[1:2,2+show_cbar+d], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
         pos_o = obs_from_sliders(sl_o)
-        ax_im_xz = Axis(fig[2,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
-        hidedecorations!(ax_im_xz, grid = false); ax_im_xz.xrectzoom = false; ax_im_xz.yrectzoom = false
+        ax_im_xz = Axis(fig[2,1], yreversed = true, alignmode = Inside(); hideaxisargs...) # 
 
         if isnothing(pos_o)
             myim_xz = @lift(collect(get_slice(myim, (sl_x.value, $(sl_y.value), sl_z.value), (1,3))))
@@ -406,15 +430,13 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         ylims!(sz[3],0) # no reverse
         crosshair(sl_x,sl_z, (sz[1],sz[3]), color=color)
 
-        ax_im_zy = Axis(fig[1,2], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false) # 
-        hidedecorations!(ax_im_zy, grid = false); ax_im_zy.xrectzoom = false; ax_im_zy.yrectzoom = false
+        ax_im_zy = Axis(fig[1,2], yreversed = true, alignmode = Inside(); hideaxisargs...) # 
         im_zy = heatmap!(myim_zy, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
         xlims!(0,sz[3])
         ylims!(sz[1],0) # no reverse
         crosshair(sl_z,sl_y, (sz[3],sz[2]), color=color)
 
-        ax_im = Axis(fig[1,1], yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
-        hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
+        ax_im = Axis(fig[1,1], yreversed = true, alignmode = Inside(); hideaxisargs...)
         im = heatmap!(myim_xy, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
         xlims!(0,sz[1])
         ylims!(sz[2],0) # reverse y !
@@ -438,8 +460,8 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
             cbar = Colorbar(fig[1,3], im, alignmode = Outside(), width=15, ticklabelspace=25f0)
             register_colorbar_scroll!(cbar, colorrange, to_value(colorrange))
         end
-        @show r_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
-        @show c_ratio = Auto(aspects[3]*sz[3]/(aspects[1]*sz[1]))
+        r_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
+        c_ratio = Auto(aspects[3]*sz[3]/(aspects[1]*sz[1]))
 
         colsize!(fig, 2, c_ratio)
         rowsize!(my_layout, 2, r_ratio)
@@ -449,12 +471,12 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
         register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, aspects=aspects)
     else
-        ax_im = Axis(fig[1,1], title=title, yreversed = true, alignmode = Inside(), xrectzoom=false, yrectzoom=false)
+        ax_im = Axis(fig[1,1], title=title, yreversed = true, alignmode = Inside(); hideaxisargs...)
         sl_x = Slider(fig[1,1, Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
         sl_y = Slider(fig[1,1, Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
         sl_o = Tuple(Slider(fig[1:2,1+d+show_cbar], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
         pos_o = obs_from_sliders(sl_o)
-        hidedecorations!(ax_im, grid = false); ax_im.xrectzoom = false; ax_im.yrectzoom = false
+        # @time hidedecorations!(ax_im, grid = false);
         if isnothing(pos_o)
             myim_xy = collect(get_slice(myim, (sl_x.value, sl_y.value, 1), (1,2)))
             if ndims(myim) == 3
@@ -503,7 +525,7 @@ function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markers
         c_ratio = sz[3]/sz[1]
         sz = sz[1:3]
         fak = preferred_size ./ max(sz...)
-        @show sz3 = max(sz[3],160/fak)
+        sz3 = max(sz[3],160/fak)
         res = fak .* (sz[1]+sz3, sz[2]+sz[3]) ./ 2 .+ (80*colorbar,70)
     else
         fak = preferred_size ./ max(sz...)
