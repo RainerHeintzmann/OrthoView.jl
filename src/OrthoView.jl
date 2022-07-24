@@ -2,7 +2,7 @@
 # ]activate .
 ## interactive example:
 module OrthoView
-export ortho!, test_ortho_view
+export ortho!, ortho, test_ortho_view
 
 using GLMakie
 using GLMakie.FileIO
@@ -231,7 +231,7 @@ function register_panel_interactions!(ax, sl_x, sl_y, sl_z, ref_ax; key_buffer="
     deregister_interaction!(ax, :rectanglezoom)
     sz = (max(to_value(sl_x.range)[1],to_value(sl_x.range)[end]), max(to_value(sl_y.range)[1],to_value(sl_y.range)[end])) # (to_value(ax.limits)[1][2] , to_value(ax.limits)[2][2])
     ctr = sz .÷ 2 .+ 1
-    # pos = Node([Point2f0(0)])
+    # pos = Observable([Point2f0(0)])
 
     register_interaction!(ax, :my_mouse_interaction) do event::MouseEvent, axis
         if event.type === MouseEventTypes.leftclick || event.type === MouseEventTypes.leftdragstart || 
@@ -341,17 +341,20 @@ end
 function colormap_line(subfig)
     col_options = ["L1","L2","L3","L4","C1","C2","C3","R1","R2","R3"]
     N_cmap = 2048
-    my_rawmap = Node(RGBA{Float32}.(cmap("L1", N=N_cmap)))
+    my_rawmap = Observable(RGBA{Float32}.(cmap("L1", N=N_cmap)))
 
     lp_menu = subfig[] = GridLayout()
     ## fill the lower menu bar with content:
-    @time menu = Menu(lp_menu[1,1], options = col_options, label="Color", prompt="Colormap") # 380 MiB just the menu ...
+    # label=["Color"], 
+    @time menu = Menu(lp_menu[1,1], options = col_options, prompt="Colormap") # 380 MiB just the menu ...
     on(menu.selection) do s
         my_rawmap[] = RGBA{Float32}.(cmap(s, N=N_cmap))
     end
     # Gamma slider
     Label(lp_menu[1,2],"Gamma:", halign = :left, valign = :center) # 5 Mb
-    sg = Slider(lp_menu[1,3], range = -2:0.1:2, horizontal = true, startvalue = 0.0, align=Inside(), label="Gamma")
+    # , label="Gamma"
+    # , align=Inside()
+    sg = Slider(lp_menu[1,3], range = -2:0.1:2, horizontal = true, startvalue = 0.0)
     gamma_txt = @lift( "$(@sprintf("%.2f",10.0^$(sg.value)))")
     Label(lp_menu[1,4],gamma_txt, halign = :left, valign = :center)
     gamma = @lift(Float32(10f0 ^ $(sg.value)))
@@ -398,7 +401,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     else
         my_cmap = colormap_line(fig[3,1:2])
     end
-    colorrange = Node((0.0,1.0))
+    colorrange = Observable((0.0,1.0))
 
     if ndims(myim) > 2 && sz[3] > 1
         # grid_size = 3
@@ -534,6 +537,12 @@ function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markers
     fig = Figure(resolution=res)
     ortho!(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects, colorbar=colorbar)
     return fig
+end
+
+function ortho(myim; kwargs...)
+    myfig = ortho!(myim; kwargs...)
+    ns = GLMakie.Screen()
+    GLMakie.display(ns, myfig)
 end
 
 function test_ortho_view(;aspects=(1,1,1,1))
