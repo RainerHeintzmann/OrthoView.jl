@@ -186,22 +186,43 @@ function register_colorbar_scroll!(cb, colorrange, default_range=(0.0,1.0), high
     end
 end
 
-function register_panel_zoom_link!(ax, ctr, sz, ax_xz=nothing, ax_zy=nothing; aspects=ones(length(sz)))
+function change_gamma(event::ScrollEvent, gamma_slider::Slider)
+    if !isnothing(event)
+        # @show to_value(gamma_slider.value)
+        # change gamma
+        zoom_dir = to_value(event.y)
+        set_close_to!(gamma_slider, to_value(gamma_slider.value) + zoom_dir* 0.1)
+    end
+end
+
+function register_panel_zoom_link!(ax, ctr, sz, ax_xz=nothing, ax_zy=nothing; gamma_slider= nothing, aspects=ones(length(sz)))
     abs_zoom = get_max_zoom(sz.*aspects, ax, ax_zy, ax_xz)
     zoom_all(abs_zoom, nothing, ax, ax_xz, ax_zy, aspects, ctr, sz)
     register_interaction!(ax, :my_scroll1_interaction) do event::ScrollEvent, axis
-        abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, aspects, ctr, sz)
+        if !isnothing(gamma_slider) && (ispressed(ax, Keyboard.left_shift) || ispressed(ax, Keyboard.right_shift))
+            change_gamma(event, gamma_slider)
+        else
+            abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, aspects, ctr, sz)
+        end
         return Consume(true) # for now prevent the zoom
     end
     if !isnothing(ax_xz)
         register_interaction!(ax_xz, :my_scroll2_interaction) do event::ScrollEvent, axis
-            abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, aspects, ctr, sz)
+            if !isnothing(gamma_slider) && (ispressed(ax, Keyboard.left_shift) || ispressed(ax, Keyboard.right_shift))
+                change_gamma(event, gamma_slider)
+            else
+                abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, aspects, ctr, sz)
+            end
             return Consume(true) # for now prevent the zoom
         end
     end
     if !isnothing(ax_zy)
         register_interaction!(ax_zy, :my_scroll2_interaction) do event::ScrollEvent, axis
-            abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, aspects, ctr, sz)
+            if !isnothing(gamma_slider) && (ispressed(ax, Keyboard.left_shift) || ispressed(ax, Keyboard.right_shift))
+                change_gamma(event, gamma_slider)
+            else
+                abs_zoom = zoom_all(abs_zoom, event, ax, ax_xz, ax_zy, aspects, ctr, sz)
+            end
             return Consume(true) # for now prevent the zoom
         end
     end
@@ -237,13 +258,19 @@ end
 
     registers the individual interactions which are identical for each panel.
 """
-function register_panel_interactions!(ax, sl_x, sl_y, sl_z, ref_ax; key_buffer="")
+function register_panel_interactions!(ax, sl_x, sl_y, sl_z, ref_ax; gamma_slider=nothing, key_buffer="")
     sz = (max(to_value(sl_x.range)[1],to_value(sl_x.range)[end]), max(to_value(sl_y.range)[1],to_value(sl_y.range)[end])) # (to_value(ax.limits)[1][2] , to_value(ax.limits)[2][2])
     ctr = sz .÷ 2 .+ 1
     # pos = Observable([Point2f0(0)])
     deregister_interaction!(ax, :rectanglezoom)
 
     register_interaction!(ax, :my_mouse_interaction) do event::MouseEvent, axis
+        if !isnothing(gamma_slider) && 
+            (event.type === MouseEventTypes.middleclick || event.type === MouseEventTypes.middledragstop) &&
+            (ispressed(ax, Keyboard.left_shift) || ispressed(ax, Keyboard.right_shift))
+            set_close_to!(gamma_slider, 0.0)
+            return Consume(true)
+        end
         if event.type === MouseEventTypes.leftclick || event.type === MouseEventTypes.leftdragstart || 
             event.type === MouseEventTypes.leftdragstop || event.type === MouseEventTypes.leftdrag || 
             event.type === MouseEventTypes.middledragstart || event.type === MouseEventTypes.middledragstop || event.type === MouseEventTypes.middledrag
@@ -358,7 +385,7 @@ function colormap_line(subfig; textsize=textsize)
     lp_menu = subfig[] = GridLayout()
     ## fill the lower menu bar with content:
     # label=["Color"], 
-    menu = Menu(lp_menu[1,1], options = col_options, prompt="Colormap", textsize=textsize) 
+    menu = Menu(lp_menu[1,1], options = col_options, prompt="Colormap", textsize=textsize, selection_cell_color_inactive=:gray, cell_color_inactive_even=:gray, cell_color_inactive_odd=:gray) 
     on(menu.selection) do s
         my_rawmap[] = RGBA{Float32}.(cmap(s, N=N_cmap))
     end
@@ -370,7 +397,7 @@ function colormap_line(subfig; textsize=textsize)
     gamma_txt = @lift( "$(@sprintf("%.2f",10.0^$(sg.value)))")
     Label(lp_menu[1,4],gamma_txt, halign = :left, valign = :center, textsize=textsize)
     gamma = @lift(Float32(10f0 ^ $(sg.value)))
-    return @lift(apply_gamma.(to_value($(my_rawmap)), to_value($(gamma))))
+    return @lift(apply_gamma.(to_value($(my_rawmap)), to_value($(gamma)))), sg
 end
 
 # Memory usage:  Menu: 380 Mb
@@ -426,7 +453,11 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         ax_im_zy = Axis(fig[1,2], yreversed = true, alignmode = Inside(); hideaxisargs...) # 
 
 
-        my_cmap = colormap_line(fig[3,1:3]; textsize=textsize) # 554 Mb
+        my_cmap, gamma_slider = colormap_line(fig[3,1:3]; textsize=textsize) 
+        if eltype(myim) <: Complex
+            set_close_to!(gamma_slider,-0.5) 
+        end
+
         if isnothing(pos_o)
             myim_xz = @lift(collect(get_slice(myim, (sl_x.value, $(sl_y.value), sl_z.value), (1,3))))
             myim_zy = @lift(collect(get_slice(myim, ( $(sl_x.value), sl_y.value, sl_z.value), (3,2))))
@@ -478,9 +509,9 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         rowsize!(my_layout, 2, r_ratio)
         rowsize!(my_layout, 3, 30)
 
-        register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax)
-        register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax)
-        register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, aspects=aspects)
+        register_panel_interactions!(ax_im_xz, sl_x, sl_z, sl_y, ref_ax, gamma_slider=gamma_slider)
+        register_panel_interactions!(ax_im_zy, sl_z, sl_y, sl_x, ref_ax, gamma_slider=gamma_slider)
+        register_panel_zoom_link!(ax_im, position, sz, ax_im_xz, ax_im_zy, gamma_slider= gamma_slider, aspects=aspects)
     else
         ax_im = Axis(fig[1,1], title=title, yreversed = true, alignmode = Inside(); hideaxisargs...)    
     
@@ -504,7 +535,10 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
                 myim_xy, position
             end
         end
-        my_cmap = colormap_line(fig[3,1:2]; textsize=textsize)    
+        my_cmap, gamma_slider = colormap_line(fig[3,1:2]; textsize=textsize)
+        if eltype(myim) <: Complex
+            set_close_to!(gamma_slider,-0.5) 
+        end
         im = heatmap!(myim_xy, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
 
         xlims!(0,sz[1])
@@ -524,11 +558,10 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
             register_colorbar_scroll!(cbar, colorrange, to_value(colorrange))
         end
 
-        register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, aspects=aspects)
-
+        register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, gamma_slider= gamma_slider, aspects=aspects)
     end
 
-    register_panel_interactions!(ax_im, sl_x, sl_y, sl_z, ref_ax)
+    register_panel_interactions!(ax_im, sl_x, sl_y, sl_z, ref_ax, gamma_slider=gamma_slider)
 
     abs_zoom = get_max_zoom(sz.*aspects, ax_im, ax_zy, ax_xz)
     zoom_all(abs_zoom, nothing, ax_im, ax_xz, ax_zy, aspects, sz .÷ 2 .+1, sz)
