@@ -4,8 +4,13 @@
 module OrthoView
 export ortho!, ortho, test_ortho_view
 
-using GLMakie
-using GLMakie.FileIO
+# using GLMakie
+# using GLMakie.FileIO
+using WGLMakie
+using WGLMakie.FileIO
+import WGLMakie: Makie
+GLMakieBackend = WGLMakie
+
 using Printf
 using ColorTypes  # for RGB type
 using ColorSchemes
@@ -22,7 +27,7 @@ function get_crosshair_ys(py, sy, gap)
 end
 
 function crosshair(ax, sl_x,sl_y, sz; markersize=0.7, color=:red)
-    if isa(markersize, Slider)
+    if isa(markersize, Makie.Slider)
         cross_xs = @lift(get_crosshair_xs($(sl_x.value), sz[1], Float32($(markersize.value))))
         cross_ys = @lift(get_crosshair_ys($(sl_y.value), sz[2], Float32($(markersize.value))))
     else
@@ -186,7 +191,7 @@ function register_colorbar_scroll!(cb, colorrange, default_range=(0.0,1.0), high
     end
 end
 
-function change_gamma(event::ScrollEvent, gamma_slider::Slider)
+function change_gamma(event::ScrollEvent, gamma_slider::Makie.Slider)
     if !isnothing(event)
         # @show to_value(gamma_slider.value)
         # change gamma
@@ -377,7 +382,7 @@ function apply_gamma(rgba, gamma)
     ColorTypes.RGBA(rgba.r^gamma, rgba.g^gamma, rgba.b^gamma, rgba.alpha)
 end
 
-function colormap_line(subfig; textsize=textsize)
+function colormap_line(subfig; fontsize=fontsize)
     col_options = ["L1","L2","L3","L4","C1","C2","C3","R1","R2","R3"]
     N_cmap = 2048
     my_rawmap = Observable(RGBA{Float32}.(cmap("L1", N=N_cmap)))
@@ -385,17 +390,17 @@ function colormap_line(subfig; textsize=textsize)
     lp_menu = subfig[] = GridLayout()
     ## fill the lower menu bar with content:
     # label=["Color"], 
-    menu = Menu(lp_menu[1,1], options = col_options, prompt="Colormap", textsize=textsize, selection_cell_color_inactive=:gray, cell_color_inactive_even=:gray, cell_color_inactive_odd=:gray) 
+    menu = Menu(lp_menu[1,1], options = col_options, prompt="Colormap", fontsize=fontsize, selection_cell_color_inactive=:gray, cell_color_inactive_even=:gray, cell_color_inactive_odd=:gray) 
     on(menu.selection) do s
         my_rawmap[] = RGBA{Float32}.(cmap(s, N=N_cmap))
     end
     # Gamma slider
-    Label(lp_menu[1,2],"Gamma:", halign = :left, valign = :center, textsize=textsize) # 5 Mb
+    Label(lp_menu[1,2],"Gamma:", halign = :left, valign = :center, fontsize=fontsize) # 5 Mb
     # , label="Gamma"
     # , align=Inside()
-    sg = Slider(lp_menu[1,3], range = -2:0.1:2, horizontal = true, startvalue = 0.0)
+    sg = Makie.Slider(lp_menu[1,3], range = -2:0.1:2, horizontal = true, startvalue = 0.0)
     gamma_txt = @lift( "$(@sprintf("%.2f",10.0^$(sg.value)))")
-    Label(lp_menu[1,4],gamma_txt, halign = :left, valign = :center, textsize=textsize)
+    Label(lp_menu[1,4],gamma_txt, halign = :left, valign = :center, fontsize=fontsize)
     gamma = @lift(Float32(10f0 ^ $(sg.value)))
     return @lift(apply_gamma.(to_value($(my_rawmap)), to_value($(gamma)))), sg
 end
@@ -413,7 +418,7 @@ end
 # ylims!: 2 Mb
 
 
-function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true, textsize=24)
+function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true, fontsize=24)
     sz = size(myim)
 
     # arguments to hide axes and disable zooming
@@ -442,18 +447,18 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         if ndims(myim) > 8
             error("Maximal number of dimensions exceeded.")
         end
-        sl_x = Slider(fig[1,1,Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
-        sl_y = Slider(fig[1,1,Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
-        sl_z = Slider(fig[1,2,Bottom()], range = 1:sz[3], horizontal = true, startvalue = sz[3]/2+1)
+        sl_x = Makie.Slider(fig[1,1,Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
+        sl_y = Makie.Slider(fig[1,1,Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
+        sl_z = Makie.Slider(fig[1,2,Bottom()], range = 1:sz[3], horizontal = true, startvalue = sz[3]/2+1)
 
-        sl_o = Tuple(Slider(fig[1:2,2+show_cbar+d], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
+        sl_o = Tuple(Makie.Slider(fig[1:2,2+show_cbar+d], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
         pos_o = obs_from_sliders(sl_o)
         ax_im = Axis(fig[1,1], yreversed = true, alignmode = Inside(); hideaxisargs...)
         ax_im_xz = Axis(fig[2,1], yreversed = true, alignmode = Inside(); hideaxisargs...) # 
         ax_im_zy = Axis(fig[1,2], yreversed = true, alignmode = Inside(); hideaxisargs...) # 
 
 
-        my_cmap, gamma_slider = colormap_line(fig[3,1:3]; textsize=textsize) 
+        my_cmap, gamma_slider = colormap_line(fig[3,1:3]; fontsize=fontsize) 
         if eltype(myim) <: Complex
             set_close_to!(gamma_slider,-0.5) 
         end
@@ -495,7 +500,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         ref_ax = [ax_im]
 
         txt = @lift(get_text(title, to_value($(position)), myim, aspects))
-        my_label = Label(fig[2,2:2+show_cbar],txt, halign = :left, valign = :top, tellheight=false, textsize=textsize) # 
+        my_label = Label(fig[2,2:2+show_cbar],txt, halign = :left, valign = :top, tellheight=false, fontsize=fontsize) # 
 
         if show_cbar
             # label = "Brightness", 
@@ -515,9 +520,9 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     else
         ax_im = Axis(fig[1,1], title=title, yreversed = true, alignmode = Inside(); hideaxisargs...)    
     
-        sl_x = Slider(fig[1,1, Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
-        sl_y = Slider(fig[1,1, Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
-        sl_o = Tuple(Slider(fig[1:2,1+d+show_cbar], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
+        sl_x = Makie.Slider(fig[1,1, Bottom()], range = 1:sz[1], horizontal = true, startvalue = sz[1]/2+1)
+        sl_y = Makie.Slider(fig[1,1, Right()], range = sz[2]:-1:1, horizontal = false, startvalue = sz[2]/2+1)
+        sl_o = Tuple(Makie.Slider(fig[1:2,1+d+show_cbar], range = sz[3+d]:-1:1, horizontal = false, startvalue = 1) for d=1:ndims(myim)-3)
         pos_o = obs_from_sliders(sl_o)
         # @time hidedecorations!(ax_im, grid = false);
         myim_xy, position = let 
@@ -535,7 +540,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
                 myim_xy, position
             end
         end
-        my_cmap, gamma_slider = colormap_line(fig[3,1:2]; textsize=textsize)
+        my_cmap, gamma_slider = colormap_line(fig[3,1:2]; fontsize=fontsize)
         if eltype(myim) <: Complex
             set_close_to!(gamma_slider,-0.5) 
         end
@@ -550,7 +555,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         ref_ax = [ax_im]
         txt = @lift(get_text(title, to_value($(position)), myim, aspects))
-        my_label = Label(fig[2,1:1+show_cbar],txt, halign = :left, valign = :top, textsize=textsize)
+        my_label = Label(fig[2,1:1+show_cbar],txt, halign = :left, valign = :top, fontsize=fontsize)
 
         if show_cbar
             # label = "Brightness", 
@@ -569,7 +574,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     return fig # , grid_size
 end
 
-function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true, textsize=24)
+function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true, fontsize=24)
     sz = size(myim) .* aspects
     if length(sz) > 2 && sz[3] != 1
         r_ratio = sz[3]/sz[2] # these ratios will be used in the ortho! function to specify the relative size
@@ -583,14 +588,19 @@ function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markers
         res = fak .* (sz[1], sz[2])  .+ (30*colorbar,160) # additional space for cbar and text
     end
     fig = Figure(resolution=res)
-    ortho!(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects, colorbar=colorbar, textsize=textsize)
+    ortho!(fig, myim; title = title,  color=color, markersize = markersize, aspects=aspects, colorbar=colorbar, fontsize=fontsize)
     return fig
 end
 
 function ortho(myim; kwargs...)
     myfig = ortho!(myim; kwargs...)
-    ns = GLMakie.Screen()
-    GLMakie.display(ns, myfig)
+    if GLMakieBackend==WGLMakie
+        Makie.display(myfig)
+    else
+        ns = GLMakieBackend.Screen()
+        GLMakieBackend.display(ns, myfig)
+    end
+    return myfig
 end
 
 function test_ortho_view(;aspects=(1,1,1,1))
