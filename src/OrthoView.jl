@@ -4,12 +4,12 @@
 module OrthoView
 export ortho!, ortho, test_ortho_view
 
-# using GLMakie
-# using GLMakie.FileIO
+using GLMakie
+using GLMakie.FileIO
 using WGLMakie
 using WGLMakie.FileIO
-import WGLMakie: Makie
-GLMakieBackend = WGLMakie
+GLMakieBackend = GLMakie
+import GLMakie: Makie
 
 using Printf
 using ColorTypes  # for RGB type
@@ -594,7 +594,7 @@ end
 
 function ortho(myim; kwargs...)
     myfig = ortho!(myim; kwargs...)
-    if GLMakieBackend==WGLMakie
+    if GLMakieBackend == WGLMakie
         Makie.display(myfig)
     else
         ns = GLMakieBackend.Screen()
