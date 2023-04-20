@@ -8,8 +8,9 @@ using GLMakie
 using GLMakie.FileIO
 using WGLMakie
 using WGLMakie.FileIO
-GLMakieBackend = GLMakie
 import GLMakie: Makie
+
+GlobalBackend = WGLMakie
 
 using Printf
 using ColorTypes  # for RGB type
@@ -594,13 +595,9 @@ end
 
 function ortho(myim; kwargs...)
     myfig = ortho!(myim; kwargs...)
-    if GLMakieBackend == WGLMakie
-        Makie.display(myfig)
-    else
-        ns = GLMakieBackend.Screen()
-        GLMakieBackend.display(ns, myfig)
-    end
-    return myfig
+    # ns = GLMakieBackend.Screen()
+    Makie.display(myfig; backend=GlobalBackend, float = true, inline = false)
+    return ()
 end
 
 function test_ortho_view(;aspects=(1,1,1,1))
