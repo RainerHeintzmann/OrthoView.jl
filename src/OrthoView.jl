@@ -141,7 +141,7 @@ function in_colorbar(cb)
     return (all(mouse.>c_start) && all(mouse .<c_stop))
 end
 
-function register_colorbar_scroll!(cb, colorrange, default_range=(0.0,1.0), high_col=:red, low_col=:blue)
+function register_colorbar_scroll!(cb, colorrange, default_range=(0.0,1.0), high_col=to_color(:red), low_col=to_color(:blue); has_highclip, has_lowclip)
     scene = cb.parent.scene
     on(events(scene).scroll, priority = 2) do event
         if ! (in_colorbar(cb))
@@ -150,6 +150,7 @@ function register_colorbar_scroll!(cb, colorrange, default_range=(0.0,1.0), high
         c_min,c_max = to_value(colorrange)
         zoom_dir = to_value(event[2]) # event.y
         c_rng = (c_max - c_min) * 1.1 ^ -zoom_dir
+        # changing the colormap with shift pressed and scrolling near the triangel regions
         if ispressed(scene,Mouse.middle) || ispressed(scene, Keyboard.left_shift) || ispressed(scene, Keyboard.right_shift) || (on_color_triangle(cb) == -1)
             c_min = c_max - c_rng
         else
@@ -164,18 +165,22 @@ function register_colorbar_scroll!(cb, colorrange, default_range=(0.0,1.0), high
         end 
         if event.button == Mouse.left && event.action == Mouse.release
             if on_color_triangle(cb) == 1
-                if isnothing(to_value(cb.highclip))
+                if !has_highclip[] # isnothing(to_value(cb.highclip))
                     cb.highclip[] = high_col
+                    has_highclip[] = true
                 else
-                    cb.highclip[] = nothing
+                    cb.highclip[] = to_colormap(to_value(cb.colormap)) |> last
+                    has_highclip[] = false
                 end
                 return Consume(true) # for now prevent the zoom
             end
             if on_color_triangle(cb) == -1
-                if isnothing(to_value(cb.lowclip))
+                if !has_lowclip[] # isnothing(to_value(cb.lowclip))
                     cb.lowclip[] = low_col
+                    has_lowclip[] = true
                 else
-                    cb.lowclip[] = nothing
+                    cb.lowclip[] = to_colormap(to_value(cb.colormap)) |> first
+                    has_lowclip[] = false
                 end
                 return Consume(true) # for now prevent the zoom
             end
@@ -419,7 +424,7 @@ end
 # ylims!: 2 Mb
 
 
-function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true, fontsize=24)
+function ortho!(fig, myim; title = "Image", color=to_color(:red), markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true, fontsize=24)
     sz = size(myim)
 
     # arguments to hide axes and disable zooming
@@ -441,7 +446,9 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     ax_im = ax_xz = ax_zy = nothing
     sl_z = nothing
 
-    colorrange = Observable((0.0,1.0))
+    colorrange = Observable((0.0, 1.0))
+    cb_highclip = Observable{Any}(to_color(:red))
+    cb_lowclip = Observable{Any}(to_color(:blue))
 
     if ndims(myim) > 2 && sz[3] > 1
         # grid_size = 3
@@ -475,25 +482,29 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
             myim_xy = @lift(collect(get_slice(myim, (sl_x.value, sl_y.value, $(sl_z.value), $(pos_o)...), (1,2))))
             position = @lift(get_pos(($(sl_x.value), $(sl_y.value), $(sl_z.value), $(pos_o)...)))
         end
-        im = heatmap!(fig[1,1], myim_xy, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
+        im = heatmap!(fig[1,1], myim_xy, interpolate=false, highclip=cb_highclip, lowclip=cb_lowclip, colormap=my_cmap)
         xlims!(0,sz[1])
         ylims!(sz[2],0) # reverse y !
         crosshair(ax_im, sl_x, sl_y, (sz[1],sz[2]), color=color)
 
-        im_xz = heatmap!(fig[2,1], myim_xz, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
+        im_xz = heatmap!(fig[2,1], myim_xz, interpolate=false, highclip=cb_highclip, lowclip=cb_lowclip, colormap=my_cmap)
         xlims!(0,sz[1])
         ylims!(sz[3],0) # no reverse
         crosshair(ax_im_xz, sl_x, sl_z, (sz[1],sz[3]), color=color)
 
-        im_zy = heatmap!(fig[1,2], myim_zy, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
+        im_zy = heatmap!(fig[1,2], myim_zy, interpolate=false, highclip=cb_highclip, lowclip=cb_lowclip, colormap=my_cmap)
         xlims!(0,sz[3])
         ylims!(sz[1],0) # no reverse
         crosshair(ax_im_zy, sl_z, sl_y, (sz[3],sz[2]), color=color)
 
+
         colorrange[]=(
             min(to_value(im.attributes.colorrange)[1],to_value(im_zy.attributes.colorrange)[1],to_value(im_xz.attributes.colorrange)[1]),
             max.(to_value(im.attributes.colorrange)[2],to_value(im_zy.attributes.colorrange)[2],to_value(im_xz.attributes.colorrange)[2]))
-    
+ 
+        # connect!(im.colorrange, colorrange)
+        # connect!(im_xz.colorrange, colorrange)
+        # connect!(im_zy.colorrange, colorrange)
         im.attributes.colorrange=colorrange
         im_xz.attributes.colorrange=colorrange
         im_zy.attributes.colorrange=colorrange
@@ -505,8 +516,15 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         if show_cbar
             # label = "Brightness", 
-            cbar = Colorbar(fig[1,3], im, alignmode = Outside(), width=15, ticklabelspace=25f0)
-            register_colorbar_scroll!(cbar, colorrange, to_value(colorrange))
+            has_highclip=true; has_lowclip=true
+            cbar = Colorbar(fig[1,3], colormap = my_cmap, colorrange=colorrange, highclip = cb_highclip[], lowclip = cb_lowclip[], alignmode = Outside(), width=15, ticklabelspace=25f0)
+            register_colorbar_scroll!(cbar, colorrange, to_value(colorrange); has_highclip=Ref(has_highclip), has_lowclip=Ref(has_lowclip))
+            lift(cbar.highclip) do hc
+                cb_highclip[] = hc
+            end
+            lift(cbar.lowclip) do lc
+                cb_lowclip[] = lc
+            end
         end
         r_ratio = Auto(aspects[3]*sz[3]/(aspects[2]*sz[2]))
         c_ratio = Auto(aspects[3]*sz[3]/(aspects[1]*sz[1]))
@@ -545,13 +563,13 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
         if eltype(myim) <: Complex
             set_close_to!(gamma_slider,-0.5) 
         end
-        im = heatmap!(myim_xy, interpolate=false, highclip=:red, lowclip=:blue, colormap=my_cmap)
+        im = heatmap!(myim_xy, interpolate=false, highclip=cb_highclip, lowclip=cb_lowclip, colormap=my_cmap)
 
         xlims!(0,sz[1])
         ylims!(sz[2],0) # reverse y !
         crosshair(ax_im, sl_x,sl_y, sz[1:2], color=color)
 
-        colorrange[] = to_value(im.attributes.colorrange)    
+        # colorrange[] = to_value(im.attributes.colorrange)    
         im.attributes.colorrange=colorrange
 
         ref_ax = [ax_im]
@@ -560,8 +578,15 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
 
         if show_cbar
             # label = "Brightness", 
-            cbar = Colorbar(fig[1,2], im, alignmode = Outside(), width=20, ticklabelspace=30f0)
-            register_colorbar_scroll!(cbar, colorrange, to_value(colorrange))
+            has_highclip=true; has_lowclip=true
+            cbar = Colorbar(fig[1,2], colormap = my_cmap, colorrange=colorrange,  highclip = cb_highclip[], lowclip = cb_lowclip[], alignmode = Outside(), width=20, ticklabelspace=30f0)
+            register_colorbar_scroll!(cbar, colorrange, to_value(colorrange); has_highclip=Ref(has_highclip), has_lowclip=Ref(has_lowclip))
+            lift(cbar.highclip) do hc
+                cb_highclip[] = hc
+            end
+            lift(cbar.lowclip) do lc
+                cb_lowclip[] = lc
+            end
         end
 
         register_panel_zoom_link!(ax_im, position, sz, nothing, nothing, gamma_slider= gamma_slider, aspects=aspects)
@@ -575,7 +600,7 @@ function ortho!(fig, myim; title = "Image", color=:red, markersize = 40.0, aspec
     return fig # , grid_size
 end
 
-function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true, fontsize=24)
+function ortho!(myim; preferred_size = 600, title = "Image", color=to_color(:red), markersize = 40.0, aspects=ones(ndims(myim)), colorbar=true, fontsize=24)
     sz = size(myim) .* aspects
     if length(sz) > 2 && sz[3] != 1
         r_ratio = sz[3]/sz[2] # these ratios will be used in the ortho! function to specify the relative size
@@ -593,10 +618,10 @@ function ortho!(myim; preferred_size = 600, title = "Image", color=:red, markers
     return fig
 end
 
-function ortho(myim; kwargs...)
+function ortho(myim; backend=GlobalBackend, kwargs...)
     myfig = ortho!(myim; kwargs...)
     # ns = GLMakieBackend.Screen()
-    Makie.display(myfig; backend=GlobalBackend, float = true, inline = false)
+    Makie.display(myfig; backend=backend, float = true, inline = false)
     return ()
 end
 
